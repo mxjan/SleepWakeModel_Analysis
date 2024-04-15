@@ -1,0 +1,147 @@
+---
+title: "SWDMr Prepare"
+author: "Maxime Jan"
+date: '06.02.2019'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+# Prepare
+
+- Prepare data to be fitted
+
+- Separate experiment
+
+- Add a time component to data
+
+# DATA
+
+```{r}
+source("../FileLocation.R")
+
+############ EXPRESSION DATA ############ 
+# Contain meta data
+load(HUMANTRANSCRIPTOME_RDATA)
+# Probe expression normalized and corrected
+load(HUMANTRANSCRIPTOMECORRECT_RDATA)
+```
+
+# Prepare Desync Data
+
+```{r}
+HT_Desync <- CorrExprs[,rownames(GSE48113_metaD)]
+HT_Desync <- as.data.frame(t(HT_Desync))
+
+######## Add Subject information ######## 
+HT_Desync$Subjects<-GSE48113_metaD$`subject:ch1`
+
+########  Add Time component used for fitting ######## 
+# During synchrony
+SampleTimeD1<-c(20,24,28,32,36,40,44)
+names(SampleTimeD1)<-as.character(seq(1,7))
+# During desynchrony
+SampleTimeD2<-c(92,96,100,104,108,112,116)
+names(SampleTimeD2)<-as.character(seq(1,7))
+TimeExpr<-c()
+for (i in rownames(GSE48113_metaD)){
+  
+  if (GSE48113_metaD[i,"day sample was taken in protocol:ch1"] == 1){
+    TimeExpr<-c(TimeExpr,SampleTimeD1[as.character(GSE48113_metaD[i,"time point:ch1"])])
+  }else{
+    TimeExpr<-c(TimeExpr,SampleTimeD2[as.character(GSE48113_metaD[i,"time point:ch1"])])
+  }
+}
+# First 24h are baseline of 8h sleep
+HT_Desync$Time<-as.double(TimeExpr)+24
+```
+
+Control
+
+```{r ControlDesync}
+boxplot(HT_Desync$CPID_516~HT_Desync$Time,xlab="Time",ylab="Expression",main="CPID_516 (ARNTL)",
+        col=c(rep("steelblue",7),rep("red",7)))
+```
+
+# Prepare Extended Sleep Data
+
+```{r}
+HT_Ext <- CorrExprs[,rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension",])]
+HT_Ext <- as.data.frame(t(HT_Ext))
+
+######## Add Subject information ######## 
+HT_Ext$Subjects<-GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension","subject:ch1"]
+
+########  Add Time component used for fitting ######## 
+######## IN THIS CASE, ALL IS ALIGN ACCORDING TO TIME AWAKE
+# Ext,Rest (in general: 7h for extended, and 8h for restricted sleep)
+TimeAddExt<-c("7.5" = 7,"10.5"=10,"13.5"=13,"16.5"=16,"19.5"=19,"22.5"=22, "25.5"=25, "28.5"=28, "31.5"=31, "34.5"=34)
+# Sleep extension ended at day 8 + 9h of sleep
+HT_Ext$Time<-as.numeric(TimeAddExt[GSE39445_metaD$`hoursawake:ch1`[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension"]]+192+9)
+
+######## IN THIS CASE, ALL IS ALIGN ACCORDING TO MELATONIN
+TimeAddExt<-c("-12"=7,"-9"=10,"-6"=13,"-3"=16,"0"=19,"3"=22, "6"=25, "9"=28, "12"=31,"15"=34)
+HT_Ext$Time<-as.numeric(TimeAddExt[GSE39445_metaD$`circadianphase:ch1`[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension"]]+192+9)
+```
+
+Control
+
+```{r ControlExtended}
+boxplot(HT_Ext$A_24_P224926~HT_Ext$Time,xlab="Time",ylab="Expression",main="A_24_P224926 (MFNG)",
+        col=c(rep("steelblue",10)))
+```
+
+
+# Prepare Restricted Sleep Data
+
+```{r}
+HT_Res <- CorrExprs[,rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction",])]
+HT_Res <- as.data.frame(t(HT_Res))
+
+######## Add Subject information ######## 
+HT_Res$Subjects<-GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction","subject:ch1"]
+
+########  Add Time component used for fitting ######## 
+######## IN THIS CASE, ALL IS ALIGN ACCORDING TO TIME AWAKE
+# Ext,Rest (7.5 is a mean. in general: 7h for extended, and 8h for restricted sleep)
+TimeAddRest<-c("7.5" = 8,"10.5"=11,"13.5"=14,"16.5"=17,"19.5"=20,"22.5"=23, "25.5"=26, "28.5"=29, "31.5"=32, "34.5"=35)
+# In our summary data, sleep restriction recording end at day 8 + 1h wake + 6h sleep -> Time: 199
+HT_Res$Time<-as.numeric(TimeAddRest[GSE39445_metaD$`hoursawake:ch1`[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction"]]+192+1+6)
+
+######## IN THIS CASE, ALL IS ALIGN ACCORDING TO MELATONIN
+TimeAddRest<-c("-15"=7,"-12"=10,"-9"=13,"-6"=16,"-3"=19,"0"=22, "3"=25, "6"=28, "9"=31, "12"=34,"15"=37)
+HT_Res$Time<-as.numeric(TimeAddRest[GSE39445_metaD$`circadianphase:ch1`[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction"]]+192+1+6)
+```
+
+Control
+
+```{r ControlRestricted}
+boxplot(HT_Res$A_24_P224926~HT_Res$Time,xlab="Time",ylab="Expression",main="A_24_P224926 (MFNG)",
+        col=c(rep("red",10)))
+```
+
+# MetaData probes
+
+```{r}
+ExprMeta<-nm_data_avg_filt$genes
+```
+
+
+```{r}
+save(HT_Res,HT_Ext,HT_Desync,ExprMeta,GSE39445_metaD,GSE48113_metaD,file=HUMANTRANSCRIPTOMESWDMR_RDATA)
+```
+

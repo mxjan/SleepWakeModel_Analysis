@@ -1,0 +1,387 @@
+---
+title: "Human Transcriptome Processing"
+author: "Maxime Jan"
+date: '01.10.2019'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+
+# LIBRARY
+
+```{r}
+library(doSNOW)
+library(optimx)
+library(lme4)
+library(RColorBrewer)
+library(ggplot2)
+NCORES<-7
+source("../FileLocation.R")
+```
+
+
+# LOAD DATA
+
+```{r}
+load(HUMANTRANSCRIPTOME_RDATA)
+```
+
+Subset to reduce memory usage when performing correction in parallel
+
+
+```{r}
+ExprData<-nm_data_avg_filt$E
+ExprMeta<-nm_data_avg_filt$genes
+rm(nm_data_avg_filt)
+```
+
+
+# Plot Function
+
+```{r}
+PlotF<-function(ExprD,rown,colType,ylab="Expression"){
+  
+  Expr<-ExprD[rown,]
+  
+  set.seed(1)
+  color = sample(grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)])
+  
+  plot(Expr,col=color[as.factor(colType)],ylab=ylab,xlab="Samples",xaxt="n",main=paste(ExprMeta[rown,c("ProbeName","GeneName")],collapse = " "),
+     ylim=quantile(Expr,prob=c(0.01,0.99),na.rm = T)+c(-sd(Expr,na.rm = T),sd(Expr,na.rm = T)),pch=19,cex=.8)
+  
+}
+```
+
+
+# PCA data 
+
+## Factors
+
+```{r,fig.width=8,fig.height=8}
+# Some random colors
+set.seed(1)
+color = sample(grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)])
+
+# Some factors
+Experiment<-c(rep("ExtRest",nrow(GSE39445_metaD)), rep("Desync",nrow(GSE48113_metaD)))
+names(Experiment)<-c(rownames(GSE39445_metaD),rownames(GSE48113_metaD))
+
+Subjs<-c(GSE39445_metaD$`subject:ch1`,GSE48113_metaD$`subject:ch1`)
+names(Subjs)<-c(rownames(GSE39445_metaD),rownames(GSE48113_metaD))
+
+Condition<-c(GSE39445_metaD$`sleepprotocol:ch1`,GSE48113_metaD$`sleep timing:ch1`)
+names(Condition)<-c(rownames(GSE39445_metaD),rownames(GSE48113_metaD))
+
+Time<-c(GSE39445_metaD$`circadianphase:ch1`,GSE48113_metaD$`time point:ch1`)
+names(Time)<-c(rownames(GSE39445_metaD),rownames(GSE48113_metaD))
+
+Genotypes<-c(GSE39445_metaD$genotypePER3,GSE48113_metaD$genotypePER3)
+names(Genotypes)<-c(rownames(GSE39445_metaD),rownames(GSE48113_metaD))
+
+Experiment<-Experiment[colnames(ExprData)]
+Subjs<-Subjs[colnames(ExprData)]
+Condition<-Condition[colnames(ExprData)]
+Time<-Time[colnames(ExprData)]
+
+# Same circadian time between "1" and "7" but not the same as 28h sleep-wake cycle
+# Time[Time == "7" & Condition == "In phase with respect to melatonin"]<-"1"
+Time[Experiment == "ExtRest"]<-paste(Time[Experiment == "ExtRest"],"ExtRestTime",sep="")
+
+TimeCond<-paste(Time,Condition,sep = "_")
+names(TimeCond)<-names(Time)
+
+Experiment2<-Experiment
+GSMFs_small<-colnames(ExprData)
+Experiment2[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == "1",]))]<-"Sync"
+Experiment2[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == "4",]))]<-"Desync"
+Experiment2[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension",]))]<-"Sleep Extension"
+Experiment2[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction",]))]<-"Sleep Restriction"  
+
+par(mfcol=c(3,3))
+
+PlotF(ExprData,rown = 13,Subjs)
+PlotF(ExprData,rown =35057,Subjs)
+PlotF(ExprData,rown =36577,Subjs)
+
+PlotF(ExprData,rown =13,TimeCond)
+PlotF(ExprData,rown =35057,TimeCond)
+PlotF(ExprData,rown =36577,TimeCond)
+
+PlotF(ExprData,rown =13,Experiment2)
+PlotF(ExprData,rown =35057,Experiment2)
+PlotF(ExprData,rown =36577,Experiment2)
+```
+
+PCA
+
+```{r,fig.height=6,fig.width=5}
+par(mfrow=c(2,1))
+pc<-prcomp(t(na.omit(ExprData)),scale = T, center= T)
+plot(pc$x[,1],pc$x[,2],col=color[as.factor(Subjs)],xlab="PC1",ylab="PC2",pch=19)
+plot(pc$x[,1],pc$x[,2],col=color[as.factor(Experiment2)],xlab="PC1",ylab="PC2",pch=19)
+```
+
+
+# Correct random effect of subjects for all genes 
+
+
+## Functions
+
+Mixed model of nested random of subject
+
+(if singular fitting, use a simpler model)
+
+```{r}
+MixModel<-function(ProbeExp,Experiment,TimeCond,Subjs){
+  
+  # Names all data:
+  Nall<-names(ProbeExp)
+  
+  # Remove outliers (above 5 Z-score)
+  outl<-which(abs(scale(ProbeExp)[,1])>5)
+  if (length(outl) > 0){
+    ProbeExp<-ProbeExp[-outl]
+    TimeCond<-TimeCond[-outl]
+    Subjs<-Subjs[-outl]
+    Experiment<-Experiment[-outl]
+  }
+  
+  # lmer Control for optimization, use nlminb lead to more convergence
+  lmerctrl<- lmerControl(optimizer ='optimx',
+              optCtrl=list(method='nlminb', starttests = FALSE, kkt = FALSE),
+              calc.derivs = FALSE)
+  
+  #- “keep it maximal”, 
+  #i.e. fit the most complex model consistent with the experimental design, removing only terms required to allow a non-singular fit (Barr et al. 2013)
+  res<-try(
+    
+    lmix<-lme4::lmer(ProbeExp~TimeCond+(1|Subjs/Experiment),REML=T,control = lmerctrl),
+    
+    # If our model is singular, use more simple model
+    if (isSingular(lmix)){
+      lmix<-lme4::lmer(ProbeExp~TimeCond+(1|Subjs),REML=T,
+        control = lmerctrl)
+    })
+  if (class(res) == "try-error"){
+    CorrExprs<-rep(NA,length(Nall))
+    names(CorrExprs)<-Nall
+  }else {
+    CorrExprs<-predict(lmix,re.form=~0)+resid(lmix)
+    CorrExprs<-CorrExprs[Nall]
+    names(CorrExprs)<-Nall
+  }
+  return(CorrExprs)
+}
+```
+
+
+## Run
+
+```{r}
+# Make clusters
+cl <- makeCluster(NCORES)
+clusterExport(cl,c("ExprMeta","ExprData","Experiment","Subjs","Condition","Time"))
+registerDoSNOW(cl)
+
+# Work split
+splitwork<-split(seq(1,length(ExprMeta$ProbeName)),seq(1,NCORES),drop=F)
+
+#splitwork<-split(seq(1,1000),seq(1,NCORES),drop=F)
+
+CorrExprs<- foreach(i = 1:NCORES,.packages=c("lme4","optimx"),.combine="rbind") %dopar% {
+  
+  # Expression of the probe
+  ProbeExp<-ExprData[splitwork[[i]][1],]
+  
+  # Time-Condition
+  TimeCond<-paste(Time,Condition,sep = "_")
+  
+  # Mixed model, for Subject and TimeCondxSubject effect
+  CorrExprs<-MixModel(ProbeExp=ProbeExp,Experiment=Experiment2,TimeCond=TimeCond,Subjs=Subjs)
+  
+  #### Do the same for all Probes in Works
+  for (j in splitwork[[i]][seq(2,length(splitwork[[i]]))]){
+    ProbeExp<-ExprData[j,]
+    CorrExprs<-rbind(CorrExprs,MixModel(ProbeExp=ProbeExp,Experiment=Experiment2,TimeCond=TimeCond,Subjs=Subjs))
+  }
+  
+  CorrExprs<-CorrExprs[,colnames(ExprData)]
+  rownames(CorrExprs)<-ExprMeta$ProbeName[splitwork[[i]]]
+  
+  return(CorrExprs)
+}
+
+stopCluster(cl)
+
+CorrExprs<-CorrExprs[ExprMeta$ProbeName,colnames(ExprData)]
+```
+
+Save variables to compute means and SE for paper plots
+
+```{r}
+EmmeansMixModel<-function(ProbeExp,Experiment,TimeCond,Subjs){
+  require(emmeans)
+  # Names all data:
+  Nall<-names(ProbeExp)
+  
+  # Remove outliers (above 5 Z-score)
+  outl<-which(abs(scale(ProbeExp)[,1])>5)
+  if (length(outl) > 0){
+    ProbeExp<-ProbeExp[-outl]
+    TimeCond<-TimeCond[-outl]
+    Subjs<-Subjs[-outl]
+    Experiment<-Experiment[-outl]
+  }
+  
+  # lmer Control for optimization, use nlminb lead to more convergence
+  lmerctrl<- lmerControl(optimizer ='optimx',
+              optCtrl=list(method='nlminb', starttests = FALSE, kkt = FALSE),
+              calc.derivs = FALSE)
+  
+  #- “keep it maximal”, 
+  #i.e. fit the most complex model consistent with the experimental design, removing only terms required to allow a non-singular fit (Barr et al. 2013)
+  lmix<-lme4::lmer(ProbeExp~TimeCond+(1|Subjs/Experiment),REML=T,control = lmerctrl)
+  # If our model is singular, use more simple model
+  if (isSingular(lmix)){
+    lmix<-lme4::lmer(ProbeExp~TimeCond+(1|Subjs),REML=T,
+      control = lmerctrl)
+  }
+
+  suem<-summary(emmeans(lmix,"TimeCond"))
+  Factor<-suem[[1]]
+  means<-suem[[2]];names(means)<-Factor
+  se<-suem[[3]];names(se)<-Factor
+  lwCI<-suem[[5]];names(lwCI)<-Factor
+  upCI<-suem[[6]];names(upCI)<-Factor
+  
+  return(list(means=means,se=se,lwCI=lwCI,upCI=upCI))
+}
+```
+
+
+```{r}
+TimeCond<-paste(Time,Condition,sep = "_")
+save(ExprData,Experiment2,TimeCond,Subjs,EmmeansMixModel,file=HUMANTRANSCRIPTOMEEMEANS_RDATA)
+```
+
+
+```{r,fig.width=8,fig.height=8}
+par(mfcol=c(3,3))
+
+PlotF(CorrExprs,rown = 13,Subjs)
+PlotF(CorrExprs,rown =35057,Subjs)
+PlotF(CorrExprs,rown =36577,Subjs)
+
+PlotF(CorrExprs,rown =13,TimeCond)
+PlotF(CorrExprs,rown =35057,TimeCond)
+PlotF(CorrExprs,rown =36577,TimeCond)
+
+PlotF(CorrExprs,rown =13,Experiment2)
+PlotF(CorrExprs,rown =35057,Experiment2)
+PlotF(CorrExprs,rown =36577,Experiment2)
+```
+
+
+
+```{r,fig.width=10,fig.height=10}
+library(uwot)
+TimeCondBSL<-TimeCond
+GSMFs_small<-colnames(CorrExprs)
+names(TimeCondBSL)<-GSMFs_small
+TimeCondBSL[rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == "1" & GSE48113_metaD$`time point:ch1` %in% c("1"),])]<-"BSL1"
+TimeCondBSL[rownames(GSE39445_metaD[GSE39445_metaD$`circadianphase:ch1` %in% c("-6") & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,])]<-"BSL1"
+
+TimeCondBSL[rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == "1" & GSE48113_metaD$`time point:ch1` %in% c("2"),])]<-"BSL2"
+TimeCondBSL[rownames(GSE39445_metaD[GSE39445_metaD$`circadianphase:ch1` %in% c("-3") & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,])]<-"BSL2"
+
+
+library(sva)
+CorrExprs_BC<-ComBat(CorrExprs,batch=Experiment,mod = model.matrix(~as.factor(TimeCondBSL)))
+
+#um<-umap(t(na.omit(CorrExprs_BC)), pca = 150, n_neighbors = 100, min_dist = 0.2,n_threads = 4,y=as.factor(TimeCondBSL),verbose=T, approx_pow = TRUE)
+idx<-Experiment == "Desync" | Experiment == "ExtRest" 
+set.seed(42)
+um<-umap(t(na.omit(CorrExprs_BC[,idx])), n_neighbors = 70, min_dist = 0.5,n_threads = 1,verbose=T,metric="euclidean",y=as.factor(TimeCond[idx]),n_components = 3) #
+
+par(mfrow=c(2,2))
+plot(um[,1],um[,2],pch=19,col=alpha(color[as.factor(TimeCondBSL[idx])],.8),xlab="UMAP 1",ylab="UMAP 2",main="Color by Time x Condition")
+plot(um[,1],um[,2],pch=19,col=alpha(color[as.factor(Experiment2[idx])],.8),xlab="UMAP 1",ylab="UMAP 2",main="Color by Experiment")
+plot(um[,1],um[,3],pch=19,col=alpha(color[as.factor(Experiment2[idx])],.8),xlab="UMAP 1",ylab="UMAP 3",main="Color by Experiment")
+plot(um[,2],um[,3],pch=19,col=alpha(color[as.factor(Experiment2[idx])],.8),xlab="UMAP 2",ylab="UMAP 3",main="Color by Experiment")
+# ExpC<-unique(cbind(color[as.factor(Experiment2)],Experiment2))
+# legend(2, -3, legend=ExpC[,2],
+#        col=ExpC[,1], pch = 19,cex=0.8)
+```
+
+
+```{r}
+PlotF(CorrExprs_BC,rown = 13,TimeCondBSL)
+PlotF(CorrExprs_BC,rown =35057,TimeCondBSL)
+PlotF(CorrExprs_BC,rown =36577,TimeCondBSL)
+```
+
+
+
+```{r}
+library(softImpute)
+sft<-softImpute(as.matrix(CorrExprs_BC),trace.it = T, rank.max=500,type="als",lambda=100)
+
+CorrExprs_BC_imp<-complete(CorrExprs_BC,sft)
+dat_imp_sft <- sft$u%*%diag(sft$d)%*%t(sft$v)
+
+par(mfrow=c(3,2))
+for (i in which(is.na(CorrExprs_BC),arr.ind=T)[seq(1,6*6)]){
+  plot(CorrExprs_BC[i[[1]],],dat_imp_sft[i[[1]],],main=i[[1]])
+}
+
+```
+
+```{r,fig.width=5,fig.height=10}
+library(uwot)
+idx<-Experiment == "Desync" | Experiment == "ExtRest"
+set.seed(42)
+um<-umap(t(CorrExprs_BC_imp[,idx]), n_neighbors = 60, min_dist = 0.4,n_threads = 1,verbose=T,y=as.factor(TimeCondBSL[idx]),n_components = 2) #
+
+par(mfrow=c(2,1))
+plot(um[,1],um[,2],pch=19,col=alpha(color[as.factor(TimeCondBSL[idx])],.8),xlab="UMAP 1",ylab="UMAP 2",main="Color by Time x Condition")
+plot(um[,1],um[,2],pch=19,col=alpha(color[as.factor(Experiment2[idx])],.8),xlab="UMAP 1",ylab="UMAP 2",main="Color by Experiment")
+```
+
+
+PCA
+
+```{r,fig.height=6,fig.width=5}
+par(mfrow=c(2,1))
+pc<-prcomp(t(na.omit(CorrExprs_BC_imp)),scale = T, center= T)
+plot(pc$x[,1],pc$x[,2],col=color[as.factor(TimeCondBSL)],xlab="PC1",ylab="PC2",pch=19)
+plot(pc$x[,1],pc$x[,2],col=color[as.factor(Experiment2)],xlab="PC1",ylab="PC2",pch=19)
+```
+
+```{r}
+save(CorrExprs,CorrExprs_BC,CorrExprs_BC_imp,file=HUMANTRANSCRIPTOMECORRECT_RDATA)
+```
+
+
+# SESSION INFORMATION
+
+```{r}
+sessionInfo()
+```
+
+

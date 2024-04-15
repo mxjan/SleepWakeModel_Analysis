@@ -1,0 +1,158 @@
+---
+title: "SummaryExcel"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+---
+
+
+```{r}
+library(openxlsx)
+library(dplyr)
+source("../FileLocation.R")
+```
+
+Cortex
+
+```{r}
+BootCortex<-read.table(CORTEXFITSBOOT,header=T)
+BootLiver<-read.table(LIVERFITSBOOT,header=T)
+BootBlood<-read.table(HUMANFITSBOOT,header=T)
+CI<-c(0.025,0.975)
+```
+
+```{r}
+BootOnlyCortex<-BootCortex[grepl("Bootstrap",BootCortex$FittingType),]
+FitOnlyCortex<-BootCortex[grepl("DataFitting",BootCortex$FittingType),]
+Cortex_sw_qt<-BootOnlyCortex %>% group_by(Gene) %>% summarise(Wake_95CI_down=quantile(Wake,prob=CI[1],na.rm=T),
+                                                              Wake_95CI_up=quantile(Wake,prob=CI[2],na.rm=T),
+                                                              
+                                                              Sleep_95CI_down=quantile(Sleep,prob=CI[1],na.rm=T),
+                                                              Sleep_95CI_up=quantile(Sleep,prob=CI[2],na.rm=T),
+                                                              
+                                                              loggamma_95CI_down=quantile(loggamma,prob=CI[1],na.rm=T),
+                                                              loggamma_95CI_up=quantile(loggamma,prob=CI[2],na.rm=T),
+                                                              
+                                                              omega_95CI_down=quantile(omega,prob=CI[1],na.rm=T),
+                                                              omega_95CI_up=quantile(omega,prob=CI[2],na.rm=T),
+                                                              
+                                                              AmpSin_95CI_down=quantile(AmpSin,prob=CI[1],na.rm=T),
+                                                              AmpSin_95CI_up=quantile(AmpSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              PhiSin_95CI_down=quantile(PhiSin,prob=CI[1],na.rm=T),
+                                                              PhiSin_95CI_up=quantile(PhiSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              tau_95CI_down=quantile(tau,prob=CI[1],na.rm=T),
+                                                              tau_95CI_up=quantile(tau,prob=CI[2],na.rm=T),
+                                                              
+                                                              SWrc_95CI_down=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                              SWrc_95CI_up=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                              
+                                                              zeta_95CI_down=quantile(zeta,prob=CI[1],na.rm=T),
+                                                              zeta_95CI_up=quantile(zeta,prob=CI[2],na.rm=T),
+                                                              
+                                                              phi_lag_95CI_down=quantile(phi_lag,prob=CI[1],na.rm=T),
+                                                              phi_lag_95CI_up=quantile(phi_lag,prob=CI[2],na.rm=T),
+                                                              )
+CortexDD<-merge(FitOnlyCortex,Cortex_sw_qt,by.x = "Gene",by.y="Gene")
+CortexDD<-CortexDD[!duplicated(CortexDD$Gene),]
+CortexDD<-CortexDD[order(CortexDD$BF,decreasing = T),]
+write.xlsx(CortexDD[,-which(colnames(CortexDD) == "FittingType")],file="../../Docs/Manuscript/Rebuttal_CellSystems/CortexFits.xlsx")
+```
+
+```{r}
+BootOnlyLiver<-BootLiver[grepl("Bootstrap",BootLiver$FittingType),]
+FitOnlyLiver<-BootLiver[grepl("DataFitting",BootLiver$FittingType),]
+Liver_sw_qt<-BootOnlyLiver %>% group_by(Gene) %>% summarise(Wake_95CI_down=quantile(Wake,prob=CI[1],na.rm=T),
+                                                              Wake_95CI_up=quantile(Wake,prob=CI[2],na.rm=T),
+                                                              
+                                                              Sleep_95CI_down=quantile(Sleep,prob=CI[1],na.rm=T),
+                                                              Sleep_95CI_up=quantile(Sleep,prob=CI[2],na.rm=T),
+                                                              
+                                                              loggamma_95CI_down=quantile(loggamma,prob=CI[1],na.rm=T),
+                                                              loggamma_95CI_up=quantile(loggamma,prob=CI[2],na.rm=T),
+                                                              
+                                                              omega_95CI_down=quantile(omega,prob=CI[1],na.rm=T),
+                                                              omega_95CI_up=quantile(omega,prob=CI[2],na.rm=T),
+                                                              
+                                                              AmpSin_95CI_down=quantile(AmpSin,prob=CI[1],na.rm=T),
+                                                              AmpSin_95CI_up=quantile(AmpSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              PhiSin_95CI_down=quantile(PhiSin,prob=CI[1],na.rm=T),
+                                                              PhiSin_95CI_up=quantile(PhiSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              tau_95CI_down=quantile(tau,prob=CI[1],na.rm=T),
+                                                              tau_95CI_up=quantile(tau,prob=CI[2],na.rm=T),
+                                                              
+                                                              SWrc_95CI_down=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                              SWrc_95CI_up=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                              
+                                                              zeta_95CI_down=quantile(zeta,prob=CI[1],na.rm=T),
+                                                              zeta_95CI_up=quantile(zeta,prob=CI[2],na.rm=T),
+                                                              
+                                                              phi_lag_95CI_down=quantile(phi_lag,prob=CI[1],na.rm=T),
+                                                              phi_lag_95CI_up=quantile(phi_lag,prob=CI[2],na.rm=T),
+                                                              )
+LiverDD<-merge(FitOnlyLiver,Liver_sw_qt,by.x = "Gene",by.y="Gene")
+LiverDD<-LiverDD[!duplicated(LiverDD$Gene),]
+LiverDD<-LiverDD[order(LiverDD$BF,decreasing = T),]
+write.xlsx(LiverDD[,-which(colnames(LiverDD) == "FittingType")],file="../../Docs/Manuscript/Rebuttal_CellSystems/LiverFits.xlsx")
+```
+
+
+
+```{r}
+BootOnlyBlood<-BootBlood[grepl("Bootstrap",BootBlood$FittingType),]
+FitOnlyBlood<-BootBlood[grepl("DataFitting",BootBlood$FittingType),]
+Blood_sw_qt<-BootOnlyBlood %>% group_by(ProbeName) %>% summarise(Wake_95CI_down=quantile(Wake,prob=CI[1],na.rm=T),
+                                                              Wake_95CI_up=quantile(Wake,prob=CI[2],na.rm=T),
+                                                              
+                                                              Sleep_95CI_down=quantile(Sleep,prob=CI[1],na.rm=T),
+                                                              Sleep_95CI_up=quantile(Sleep,prob=CI[2],na.rm=T),
+                                                              
+                                                              loggamma_95CI_down=quantile(loggamma,prob=CI[1],na.rm=T),
+                                                              loggamma_95CI_up=quantile(loggamma,prob=CI[2],na.rm=T),
+                                                              
+                                                              omega_95CI_down=quantile(omega,prob=CI[1],na.rm=T),
+                                                              omega_95CI_up=quantile(omega,prob=CI[2],na.rm=T),
+                                                              
+                                                              AmpSin_95CI_down=quantile(AmpSin,prob=CI[1],na.rm=T),
+                                                              AmpSin_95CI_up=quantile(AmpSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              PhiSin_95CI_down=quantile(PhiSin,prob=CI[1],na.rm=T),
+                                                              PhiSin_95CI_up=quantile(PhiSin,prob=CI[2],na.rm=T),
+                                                              
+                                                              intercept_95CI_down=quantile(intercept,prob=CI[1],na.rm=T),
+                                                              intercept_95CI_up=quantile(intercept,prob=CI[2],na.rm=T),
+                                                              
+                                                              tau_95CI_down=quantile(tau,prob=CI[1],na.rm=T),
+                                                              tau_95CI_up=quantile(tau,prob=CI[2],na.rm=T),
+                                                              
+                                                              SWrc_95CI_down=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                              SWrc_95CI_up=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                              
+                                                              zeta_95CI_down=quantile(zeta,prob=CI[1],na.rm=T),
+                                                              zeta_95CI_up=quantile(zeta,prob=CI[2],na.rm=T),
+                                                              
+                                                              phi_lag_95CI_down=quantile(phi_lag,prob=CI[1],na.rm=T),
+                                                              phi_lag_95CI_up=quantile(phi_lag,prob=CI[2],na.rm=T),
+                                                              )
+BloodDD<-merge(FitOnlyBlood,Blood_sw_qt,by.x = "ProbeName",by.y="ProbeName",all.x = T)
+BloodDD<-BloodDD[!duplicated(BloodDD$ProbeName),]
+BloodDD<-BloodDD[order(BloodDD$BF,decreasing = T),]
+BloodDD<-BloodDD[-nrow(BloodDD),]
+write.xlsx(BloodDD[,-which(colnames(BloodDD) == "FittingType")],file="../../Docs/Manuscript/Rebuttal_CellSystems/BloodFits.xlsx")
+```
+
+

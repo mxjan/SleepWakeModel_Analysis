@@ -1,0 +1,641 @@
+---
+title: "Effect of Recovery on Gexp"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r}
+library(patchwork)
+library(ggplot2)
+library(SWDMr)
+library(reshape2)
+library(doSNOW)
+library(ggrepel)
+library(ggpubr)
+library(scattermore)
+
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(RASTERPLOT_FUN)
+source(RECOVERY_FUN)
+
+colorCode<-ColorCode()
+NCORES<-10
+```
+
+# Data
+
+load dataset
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+
+# Fold-change end SD vs Time-constant
+
+```{r}
+if (file.exists(paste(DATADIR,"SaveResults/FoldChangeSD_TimeConstant.Rdata",sep=""))){
+  load(paste(DATADIR,"SaveResults/FoldChangeSD_TimeConstant.Rdata",sep=""))
+}else{
+  cl <- makeCluster(NCORES)
+  registerDoSNOW(cl)
+  GenesCortex<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)]
+  GenesCortex<-GenesCortex[!duplicated(GenesCortex)]
+  FCendSD_Cortex<-foreach(i = GenesCortex,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetFCendSD(ProbeGene = i,Dataset = "Cortex",data=dataMouseCortex)
+  }
+  MaxFCafterSD_Cortex<-foreach(i = GenesCortex,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetmaxFCafterSD(ProbeGene = i,Dataset = "Cortex",data=dataMouseCortex)
+  }
+    
+  TimeConst_Cortex<-foreach(i = GenesCortex,.packages = c("SWDMr"),.combine="c") %dopar% {
+    Gettau(Genes = i,fits = dataMouseCortex$fits)
+  }
+  swdmr_cortex<-SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr)
+  SWrc_Cortex<-foreach(i = GenesCortex,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetSWrcMouse(Genes = i,fits = dataMouseCortex$fits,swdmr = swdmr_cortex)
+  }
+  
+  GenesLiver<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)]
+  GenesLiver<-GenesLiver[!duplicated(GenesLiver)]
+  FCendSD_Liver<-foreach(i = GenesLiver,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetFCendSD(ProbeGene = i,Dataset = "Liver",data=dataMouseLiver)
+  }
+  MaxFCafterSD_Liver<-foreach(i = GenesLiver,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetmaxFCafterSD(ProbeGene = i,Dataset = "Liver",data=dataMouseLiver)
+  }
+  TimeConst_Liver<-foreach(i = GenesLiver,.packages = c("SWDMr"),.combine="c") %dopar% {
+    Gettau(Genes = i,fits = dataMouseLiver$fits)
+  }
+  swdmr_liver<-SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr)
+  SWrc_Liver<-foreach(i = GenesLiver,.packages = c("SWDMr"),.combine="c") %dopar% {
+    GetSWrcMouse(Genes = i,fits = dataMouseLiver$fits,swdmr = swdmr_liver)
+  }
+  
+  stopCluster(cl)
+  DataFCTC<-cbind.data.frame(FoldChangeEndSD=c(FCendSD_Cortex,FCendSD_Liver),
+                             MaxFoldChangeAfterSD=c(MaxFCafterSD_Cortex,MaxFCafterSD_Liver),
+                             TimeConstant=c(TimeConst_Cortex,TimeConst_Liver),
+                             Dataset=c(rep("Cortex",length(FCendSD_Cortex)),rep("Liver",length(TimeConst_Liver))),
+                             SWrc=c(SWrc_Cortex,SWrc_Liver))
+  DataFCTC$Gene<-c(GenesCortex,GenesLiver)
+  save(DataFCTC,file=paste(DATADIR,"SaveResults/FoldChangeSD_TimeConstant.Rdata",sep=""))
+}
+```
+
+Effect of sleep deprivation for genes with Z-score > 1
+
+
+```{r,fig.width=5,fig.height=4}
+ggFCTC<-ggplot(aes(x=TimeConstant,y=FoldChangeEndSD,color=Dataset),data=DataFCTC[DataFCTC$MaxFoldChangeAfterSD>1,])+geom_scattermore(pointsize=3,alpha=.5,pixels = c(400, 600))+
+  scale_x_continuous(trans="log2",limits=c(1,150))+
+  scale_color_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))+theme_classic()+xlab(bquote(paste("Time-constant ",tau," [h]")))+ylab(expression(paste("SD effect size [",ZT6[SD],"]")))+geom_hline(yintercept = 0,linetype="22")+theme()+theme(plot.margin = unit(c(0,0,0,0), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))+scale_alpha_continuous("SWrc",range=c(0,1))+
+  theme(text = element_text(size = 8),legend.position = "none")
+
+ggTC<-ggplot(aes(x=TimeConstant,color=Dataset,fill=Dataset),data=DataFCTC[DataFCTC$MaxFoldChangeAfterSD>1,])+geom_density()+
+  scale_x_continuous(trans="log2",limits=c(1,150),position = "top")+
+  scale_color_manual(values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))+
+  scale_fill_manual(values=c("Cortex"=alpha(colorCode[["Cortex"]],.5),"Liver"=alpha(colorCode[["Liver"]],.5)))+
+  theme_classic()+theme(legend.position="none",plot.margin = unit(c(0,0,0,0), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+
+ggFC<-ggplot(aes(y=FoldChangeEndSD,color=Dataset,fill=Dataset),data=DataFCTC[DataFCTC$MaxFoldChangeAfterSD>1,])+
+  geom_density()+
+  scale_color_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))+
+  scale_fill_manual("Tissue",values=c("Cortex"=alpha(colorCode[["Cortex"]],.5),"Liver"=alpha(colorCode[["Liver"]],.5)))+
+  theme_classic()+scale_y_continuous(position = "right")+
+  geom_hline(yintercept = 0,linetype="22")+theme(plot.margin = unit(c(0,0,0,0), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position="none")
+
+layout<-"
+A#
+BC"
+ggfinal_FC<-wrap_plots(A = RemoveYaxis(RemoveXaxis(ggTC)), B = ggFCTC, C = RemoveYaxis(RemoveXaxis(ggFC)), design = layout,widths = c(1,.4),heights = c(.2,1))#+plot_layout(guides = "collect")
+ggfinal_FC
+
+ggsave(ggfinal_FC,filename = "../Figures/FCAndTau.pdf",width = 50 ,height = 60,units="mm")
+```
+
+
+
+# Example Recovery of genes in Cortex
+
+```{r}
+Gene<-"Mfsd4a" #Mfsd4a Psmf1
+Dataset<-"Cortex"
+```
+
+
+## Plot 1
+
+
+See the expression dynamic of this gene and Effect Size
+
+```{r}
+source(RECOVERY_FUN)
+res1<-ExpressionAndEffectSize(Gene,Dataset)
+res1
+```
+
+See if we replace some recovery sleep by baseline sleep
+
+```{r,fig.width=5,fig.height=5}
+source(RECOVERY_FUN)
+res2<-EffectSize_RecSleepReplaced(Gene,Dataset,doylim=c(-3,3))
+res2
+```
+
+
+
+```{r,fig.width=10,fig.height=3}
+library(patchwork)
+gff<-(res1 | res2[[1]] | res2[[2]])+plot_layout(widths = c(1,1,.5))
+ggsave(gff,file=paste("../Figures/",Gene,Dataset,"_Recovery.pdf"),width = 150 ,height = 60 ,units = "mm")
+```
+
+# Example Recovery of another genes
+
+```{r}
+Gene<-"Paqr8"
+Dataset<-"Cortex"
+```
+
+
+## Plot 1
+
+See the expression dynamic of this gene and Effect Size
+
+```{r}
+source(RECOVERY_FUN)
+res1<-ExpressionAndEffectSize(Gene,Dataset)
+res1
+```
+
+See if we replace some recovery sleep by baseline sleep
+
+```{r,fig.width=5,fig.height=5}
+source(RECOVERY_FUN)
+res2<-EffectSize_RecSleepReplaced(Gene,Dataset,doylim=c(-.5,3))
+res2
+```
+
+
+
+```{r,fig.width=10,fig.height=3}
+library(patchwork)
+gff<-(res1 | res2[[1]] | res2[[2]])+plot_layout(widths = c(1,1,.5))
+ggsave(gff,file=paste("../Figures/",Gene,Dataset,"_Recovery.pdf"),width = 150 ,height = 60 ,units = "mm")
+```
+
+# All genes
+
+```{r}
+if (file.exists(paste(DATADIR,"SaveResults/TopRecoveryTime.Rdata",sep=""))){
+  load(paste(DATADIR,"SaveResults/TopRecoveryTime.Rdata",sep=""))
+}else{
+  cl <- makeCluster(15)
+  registerDoSNOW(cl)
+  GenesCortex<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)]
+  GenesCortex<-GenesCortex[!duplicated(GenesCortex)]
+  FCendSD_Cortex<-foreach(i = GenesCortex,.packages = c("SWDMr"),.combine="cbind") %dopar% {
+  dd<-ViewModelFoldChange(ProbeGene = i,Dataset = "Cortex")
+    return(dd[[6]][[2]])
+  }
+  colnames(FCendSD_Cortex)<-GenesCortex
+  
+  GenesLiver<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)]
+  GenesLiver<-GenesLiver[!duplicated(GenesLiver)]
+  FCendSD_Liver<-foreach(i = GenesLiver,.packages = c("SWDMr"),.combine="cbind") %dopar% {
+  dd<-ViewModelFoldChange(ProbeGene = i,Dataset = "Liver")
+    return(dd[[6]][[2]])
+  }
+  colnames(FCendSD_Liver)<-GenesLiver
+  
+  save(FCendSD_Liver,FCendSD_Cortex,file=paste(DATADIR,"SaveResults/TopRecoveryTime.Rdata",sep=""))
+  stopCluster(cl)
+}
+```
+
+
+```{r}
+# Time of sleep recovery for a minimum time required for gene to recover
+RecSForMinRecG<-apply(FCendSD_Cortex,2,function(x){
+  if (any(x > 0)){
+    seq(0,42)[which.min(x)][1]
+  }else{
+    return(NA)
+  }
+})
+
+RecSForMinRecG_L<-apply(FCendSD_Liver,2,function(x){
+  if (any(x > 0)){
+    seq(0,42)[which.min(x)][1]
+  }else{
+    return(NA)
+  }
+})
+
+# Time for gene to recover
+RecG_FullRecS<-apply(FCendSD_Cortex,2,function(x){
+  if (any(x > 0)){
+    return(x[length(x)])
+  }else{
+    return(NA)
+  }
+})
+
+RecG_FullRecS_L<-apply(FCendSD_Liver,2,function(x){
+  if (any(x > 0)){
+    return(x[length(x)])
+  }else{
+    return(NA)
+  }
+})
+
+dd<-cbind.data.frame(RecSForMinRecG=c(RecSForMinRecG,RecSForMinRecG_L),
+                     RecG_FullRecS=c(RecG_FullRecS,RecG_FullRecS_L))
+dd$Tissue<-c(rep("Cortex",length(RecSForMinRecG)),rep("Liver",length(RecG_FullRecS_L)))
+gg<-ggplot(aes(RecSForMinRecG,RecG_FullRecS,color=Tissue),data=dd)+geom_point(size=.5)
+gg<-gg+scale_color_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))
+gg<-gg+theme_classic()+theme(plot.margin = unit(c(1,1,1,1), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+gg<-gg+scale_x_continuous(breaks = seq(0,42,by=6))
+gg<-gg+scale_y_continuous(breaks = seq(0,150,by=24))
+ggf<-gg+ facet_grid(~ Tissue)+theme(legend.position = "none",text=element_text(size = 6))
+ggf<-ggf+ylab("Recovery Time")
+ggf
+
+gg<-ggplot(aes(RecG_FullRecS,fill=Tissue),data=dd)+geom_histogram(size=.5)
+gg<-gg+scale_fill_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))
+gg<-gg+theme_classic()+theme(plot.margin = unit(c(1,1,1,1), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+gg<-gg+scale_x_continuous(breaks = seq(6,126,by=24),labels=seq(6,126,by=24)+54)
+ggf1<-gg+ facet_wrap(~ Tissue,ncol=1)+theme(legend.position = "none",text=element_text(size = 6))
+ggf1<-ggf1+xlab("Gene Recovery Time for\n42h of Recovery Sleep")
+
+gg<-ggplot(aes(RecSForMinRecG,fill=Tissue),data=dd)+geom_histogram(size=.5)
+gg<-gg+scale_fill_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))
+gg<-gg+theme_classic()+theme(plot.margin = unit(c(1,1,1,1), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+gg<-gg+scale_x_continuous(breaks = seq(0,42,by=6))
+ggf2<-gg+ facet_grid(~ Tissue)+theme(legend.position = "none",text=element_text(size = 6))
+ggf2<-ggf2+xlab("Recovery Sleep amount for\nfastest Gene Recovery Time")
+
+(ggf1)/(ggf2)
+
+# hist(res,breaks=20);abline(v=c(2,6,12,18),col="red")
+# hist(res2,breaks=20)
+```
+
+```{r}
+gg<-ggplot(aes(RecG_FullRecS,fill=Tissue),data=dd[dd$Tissue == "Cortex",])+geom_histogram(size=.5)
+gg<-gg+scale_fill_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))
+gg<-gg+theme_classic()+theme(plot.margin = unit(c(1,1,1,1), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+gg<-gg+scale_x_continuous(breaks = seq(6,126,by=24),labels=seq(6,126,by=24)+54)
+ggf1<-gg+theme(legend.position = "none",text=element_text(size = 8))
+ggf1<-ggf1+xlab("Gene Recovery Time for\n42h of Recovery Sleep")
+ggf1
+
+gg<-ggplot(aes(RecG_FullRecS,fill=Tissue),data=dd[dd$Tissue == "Liver",])+geom_histogram(size=.5)
+gg<-gg+scale_fill_manual("Tissue",values=c("Cortex"=colorCode[["Cortex"]],"Liver"=colorCode[["Liver"]]))
+gg<-gg+theme_classic()+theme(plot.margin = unit(c(1,1,1,1), "mm"),panel.background = element_blank(),panel.border = element_rect(fill=NA))
+gg<-gg+scale_x_continuous(breaks = seq(6,126,by=24),labels=seq(6,126,by=24)+54)
+ggf2<-gg+theme(legend.position = "none",text=element_text(size = 8))
+ggf2<-ggf2+xlab("Gene Recovery Time for\n42h of Recovery Sleep")
+ggf2
+
+RemoveXaxis(ggf1+ggtitle("Cortex"))/ggf2+ggtitle("Liver")
+ggsave(RemoveXaxis(ggf1+ggtitle("Cortex"))/ggf2+ggtitle("Liver"),file=paste("../Figures/Gene_Recovery.pdf"),width = 50 ,height = 60 ,units = "mm")
+```
+
+
+
+```{r}
+quantile(dd$RecG_FullRecS[dd$Tissue=="Cortex"],prob=.5,na.rm=T)
+quantile(dd$RecG_FullRecS[dd$Tissue=="Liver"],prob=.5,na.rm=T)
+
+percC<-ecdf(dd$RecG_FullRecS[dd$Tissue=="Cortex"]);percC(18);1-percC(18)
+percL<-ecdf(dd$RecG_FullRecS[dd$Tissue=="Liver"]);percL(18);1-percL(18)
+```
+
+
+
+## Heatmap
+
+```{r}
+commonSW<-c("Ndufs1","Snrpa","Zc3h7b","Plcxd1","Klhl7","Vti1a","Usp22","Cirbp","Calr","Ttll3","Eid1","Abcc5","Pspc1","Dnajc19","Sdf2l1","Ormdl2","Sepsecs","Upf3b","Rnf170","Tsnax","Tcta","Eepd1","Nln","Ppfibp1","Gnal","Cdk6","Hnrnpa2b1","Rsrc1","Camk2g","Adh5",".Pdia3","Mtmr1","Tmem63b","Ccdc14","Mov10","Dnajc3","Sec23ip","Ppp1cc","Rab22a","Lztfl1","Sh3bgrl2","Casd1","Hnrnpc","Ccdc122","Dnajc1","Casp3","Gstz1","Tmtc2","Nmnat3","Fbxl4","Ebp","Ctso","Tnrc18","Zbtb40","Zc3h6","Naglu","Fam120a","Mettl3","Abcb10","Rad50","Apol7a","Ciapin1","Med14","Ldlr","Csnk1g1","Cnpy4","Hr","Wars","Fdps","Fubp3","Dhcr24","Hsp90b1","Dcun1d4","Uggt1","Krcc1","Secisbp2","Camkk2","Mios","Pot1b","BC025920","Echs1","Anapc7","Rbm3","Ercc3","Glul","Insig1","Wwp2","Sbk1","Nipsnap3b","Erlec1","Tra2a","Arid1a","Raph1","Uevld","Ahsa1","Manea","Prpf31","Tmem33","Map4","Txnrd3","Tmem97","Ankrd27","Bcor","Pipox","Hist1h2bc","Acrbp","Alg11","Grb2","Ssr3")
+```
+
+
+```{r}
+library(gplots)
+library(ComplexHeatmap)
+library(circlize)
+
+rel_FCendSD_Cortex<-FCendSD_Cortex#apply(FCendSD_Cortex,2,function(x){x-x[43]})
+rel_FCendSD_Cortex<-apply(rel_FCendSD_Cortex,2,diff)
+rel_FCendSD_Cortex<-rel_FCendSD_Cortex[,! apply(rel_FCendSD_Cortex,2,function(x){any(is.na(x))})]
+rel_FCendSD_Cortex<-rel_FCendSD_Cortex[,apply(rel_FCendSD_Cortex,2,function(x){max(abs(cumsum(x)))>1})]
+
+col_fun_zeta = colorRamp2(c(-2, 2), c(colorCode["SCNforce"],colorCode["SWforce"]))
+col_fun_SWrc = colorRamp2(c(0, 1), c(colorCode["SCNforce"],colorCode["SWforce"]))
+col_fun_commonSWdr = colorRamp2(c(1, 0), c(colorCode["SCNforce"],"white"))
+ZetaC<- GetZeta(Genes = colnames(rel_FCendSD_Cortex),fits =dataMouseCortex$fits)
+SWrcCortex<-DataFCTC$SWrc[DataFCTC$Dataset == "Cortex"];names(SWrcCortex)<-DataFCTC$Gene[DataFCTC$Dataset == "Cortex"]
+
+IsCommonSW<-as.numeric(colnames(rel_FCendSD_Cortex) %in% commonSW)
+
+ha = rowAnnotation(zeta = log10(ZetaC), 
+                   col = list(zeta = col_fun_zeta),
+                   annotation_legend_param=list(zeta=list(title=expression(paste(log10,zeta)))),
+                   annotation_label =expression(paste(log10,zeta)))
+
+pdf(file="../Figures/Heatmap_Gene_Recovery_Cortex.pdf",width = 4,height=6)
+mat<-t(rel_FCendSD_Cortex)
+#rownames(mat)<-NULL
+rownames(mat)[! rownames(mat) %in% c("Homer1","Arntl","Dbp","Acot11","Per2","Clock","Npas2","Cry1","Egr2","Srf","Nr1d1","Rorb","Paqr8","Mfsd4a")]<-""
+colnames(mat)<-as.character(seq(1,42))
+colnames(mat)[which(! as.numeric(colnames(mat)) %in% c(1,6,12,18,24,30,36,42))]<-""
+
+
+set.seed(42)
+# matcor<-cor(t(mat))
+km<-kmeans(t(apply(mat,1,rank)),centers=6,nstart=200)
+
+Heatmap(mat,use_raster=T,
+        col=colorRamp2(seq(-2.5, 2.5, length = 3), c("green", "black", "red")), 
+        heatmap_legend_param = list(at = c(-2.5, 0, 2.5)),
+        name="Gene recovery\ngain time [h]",
+        row_title="Genes",
+        row_title_side="left",
+        column_title_side = "bottom",
+        column_title="Recovery sleep amount",
+        show_column_dend = FALSE, show_row_dend = FALSE,cluster_columns=F,
+        column_names_gp = gpar(fontsize = 6),column_names_rot	= 0,
+        clustering_distance_rows = "euclidean",
+        right_annotation = ha,
+        row_names_gp = grid::gpar(fontsize = 6),
+        row_split = km$cluster)
+dev.off()
+```
+
+
+
+```{r}
+rel_FCendSD_Liver<-FCendSD_Liver#apply(FCendSD_Cortex,2,function(x){x-x[43]})
+rel_FCendSD_Liver<-apply(rel_FCendSD_Liver,2,diff)
+rel_FCendSD_Liver<-rel_FCendSD_Liver[,! apply(rel_FCendSD_Liver,2,function(x){any(is.na(x))})]
+rel_FCendSD_Liver<-rel_FCendSD_Liver[,apply(rel_FCendSD_Liver,2,function(x){max(abs(cumsum(x)))>1})]
+
+ZetaL<- GetZeta(Genes = colnames(rel_FCendSD_Liver),fits =dataMouseLiver$fits)
+SWrcLiver<-DataFCTC$SWrc[DataFCTC$Dataset == "Liver"];names(SWrcLiver)<-DataFCTC$Gene[DataFCTC$Dataset == "Liver"]
+
+ha = rowAnnotation(zeta = log10(ZetaL), 
+                   col = list(zeta = col_fun_zeta),
+                   annotation_legend_param=list(zeta=list(title=expression(paste(log10,zeta)))),
+                   annotation_label =expression(paste(log10,zeta)))
+
+pdf(file="../Figures/Heatmap_Gene_Recovery_Liver.pdf",width = 4,height=6)
+mat<-t(rel_FCendSD_Liver)
+
+
+#rownames(mat)<-NULL
+rownames(mat)[! rownames(mat) %in% c("Homer1","Arntl","Dbp","Acot11","Per2","Clock","Npas2","Cry1","Egr2","Srf","Nr1d1","Rorb","Paqr8","Mfsd4a")]<-""
+colnames(mat)<-as.character(seq(1,42))
+colnames(mat)[which(! as.numeric(colnames(mat)) %in% c(1,6,12,18,24,30,36,42))]<-""
+
+set.seed(42)
+# matcor<-cor(t(mat))
+km<-kmeans(t(apply(mat,1,rank)),centers=6,nstart=200)
+
+Heatmap(mat,use_raster=T,
+        col=colorRamp2(seq(-2.5, 2.5, length = 3), c("green", "black", "red")), 
+        heatmap_legend_param = list(at = c(-2.5, 0, 2.5)),
+        name="Gene recovery\ngain time [h]",
+        row_title="Genes",
+        row_title_side="left",
+        column_title_side = "bottom",
+        column_title="Recovery sleep amount",
+        show_column_dend = FALSE, show_row_dend = FALSE,cluster_columns=F,
+        column_names_gp = gpar(fontsize = 6),column_names_rot	= 0,
+        clustering_distance_rows = "euclidean",
+        right_annotation = ha,
+        row_names_gp = grid::gpar(fontsize = 6),
+        row_split = km$cluster)
+
+dev.off()
+```
+
+# Human FD
+
+```{r}
+load(HUMANFITTED_RDATA)
+load(HUMANTRANSCRIPTOMEEMEANS_RDATA)
+load(HUMANDATASET_RDATA)
+fitsH<-read.table(HUMANFITS,header=T)
+rownames(fitsH)<-fitsH$ProbeName
+ProbesSelec<-fitsH$ProbeName[fitsH$BF>exp(1)]
+ProbesSelec<-ProbesSelec[ProbesSelec %in% rownames(Preds_Desync)]
+```
+
+Compute effect along desynchronization protocol
+
+```{r}
+data<-LoadData("Desync")
+ProbeID<-"A_23_P11071"
+model<-GetModel("Desync",data,ProbeID)
+cols<-colorCode
+
+# Simulate normal 8h sleep after last sleep episode of FD
+idx1<-model@SWdist$Time>9 & model@SWdist$Time<=12
+idx2<-model@SWdist$Time>12 & model@SWdist$Time<=36
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx1,])# end 225, ZT9
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist$Time<-cumsum(rep(.1,length(model@SWdist$Time)))-468
+model<-SetParametersModel(model)
+
+out<-SWDMrFit(model,params = fitsH[ProbeID,],method="Solve")
+Expr<-ExprData[rownames(ExprData) == ProbeID,]
+sdexpr<-sqrt(fitsH[ProbeID,]$RSS/(length(Expr[!is.na(Expr)])-7))
+
+Time<-out$time
+# bsl
+bsl<-out$y1[Time>24 & Time<=48]
+res<-sapply(seq(2,14),function(x){
+  (out$y1[Time>(24*x) & Time<=(24*(x+1))] - bsl)# / sdval
+})
+EffectSize<-as.vector(res)
+plot(cumsum(rep(.1,length(EffectSize)))+48,EffectSize,type="l");abline(v=c(48,72,120,144,216),col="red")
+max(EffectSize)
+
+dd<-cbind.data.frame(Time=cumsum(rep(.1,length(EffectSize)))+48,
+                     EffectSize=EffectSize)
+
+
+gg<-ggplot(aes(Time,EffectSize),data=dd) + geom_path()
+#gg<-gg + geom_vline(xintercept = c(48,72,120,144,192,216),col="red")
+gg<-gg+scale_x_continuous(breaks=seq(0,456,by=24))
+gg<-gg+theme(legend.position = "none",text=element_text(size = 8),plot.title = element_text(size=8))
+gg<-gg+ylab("Effect Size")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA)) 
+gg<-gg+annotate("ribbon",x=model@SWdist$Time,ymax=model@SWdist$Sleep-0.5,ymin=min(model@SWdist$Sleep)-0.5,fill=alpha(cols["SWforce"],.5),color=cols["SWforce"])
+gg<-gg+coord_cartesian(ylim=c(-.65,.5),xlim=c(0,360))
+gg<-gg+geom_hline(yintercept = 0,linetype="22",color="grey50")
+
+# Annota
+
+gg<-gg+annotate("line",x=c(-24,36),y=c(-.5,-.5),size=1,color="red")
+gg<-gg+annotate("text",label="baseline",x=mean(c(-24,36)),y=-.55,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(48,56),y=c(-.5,-.5),size=1,color="red")
+gg<-gg+annotate("text",label="in-phase",x=mean(c(48,56)),y=-.55,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(132,141),y=c(-.5,-.5),size=1,color="red")
+gg<-gg+annotate("text",label="anti-phase",x=mean(c(132,141)),y=-.55,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(216,225),y=c(-.5,-.5),size=1,color="red")
+gg<-gg+annotate("text",label="in-phase",x=mean(c(216,225)),y=-.55,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(240,368),y=c(-.5,-.5),size=1,color="red")
+gg<-gg+annotate("text",label="baseline",x=mean(c(240,368)),y=-.55,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg +ggtitle(bquote(paste(italic("PORCN")," (",.(ProbeID),")"," - Blood"," (SWrc:",.(round(GetSWrcHuman(ProbeID,SWdf_human = MeanSWdf,HT_Desync = HT_Desync,fits = fitsH),2)),"; ",zeta,"=",.(round(GetZeta(ProbeID,fitsH),2)),")")))
+
+gg<-gg+geom_vline(xintercept = 177,color=alpha(cols[["SWforce"]],.7))+xlab("Time [h]")
+
+
+ggsave(gg,file=paste("../Figures/PORCN_FC.pdf"),width = 100 ,height = 45 ,units = "mm")
+```
+
+
+```{r}
+
+if (file.exists(paste(DATADIR,"SaveResults/DesyncRecovery.Rdata",sep=""))){
+  load(paste(DATADIR,"SaveResults/DesyncRecovery.Rdata",sep=""))
+}else{
+  cl <- makeCluster(7)
+  registerDoSNOW(cl)
+  
+  EffectSizes<-foreach(i = ProbesSelec[-18954],.packages = c("SWDMr"),.combine="cbind") %dopar% {
+    ProbeID<-i
+    model<-GetModel("Desync",data,ProbeID)
+    
+    # Simulate normal 8h sleep after last sleep episode of FD
+    idx1<-model@SWdist$Time>9 & model@SWdist$Time<=12
+    idx2<-model@SWdist$Time>12 & model@SWdist$Time<=36
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx1,])# end 225, ZT9
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+    model@SWdist$Time<-cumsum(rep(.1,length(model@SWdist$Time)))-468
+    
+    out<-SWDMrFit(model,params = fitsH[ProbeID,],method="Solve")
+    Expr<-ExprData[rownames(ExprData) == ProbeID,]
+    sdexpr<-sqrt(fitsH[ProbeID,]$RSS/(length(Expr[!is.na(Expr)])-7))
+    
+    Time<-out$time
+    
+    # bsl
+    bsl<-out$y1[Time>24 & Time<=48]
+    res<-sapply(seq(2,14),function(x){
+      (out$y1[Time>(24*x) & Time<=(24*(x+1))] - bsl)# / sdval
+    })
+    EffectSize<-as.vector(res)
+    return(EffectSize)
+  }
+  
+  stopCluster(cl)
+  save(EffectSizes,file=paste(DATADIR,"SaveResults/DesyncRecovery.Rdata",sep=""))
+}
+```
+
+```{r}
+EffectSize<-EffectSizes[,1]
+Time<-cumsum(rep(.1,length(EffectSize)))+48
+MaxES<-apply(abs(EffectSizes),2,max)
+idx_MaxES<-apply(EffectSizes,2,which.max)
+
+hist(Time[idx_MaxES[abs(MaxES)>quantile(abs(MaxES),prob=0.5)]],breaks=100,xlim=c(48,240));abline(v=c(48,72,120,144,216+24),col="red")
+
+```
+
+```{r,fig.height=4,fig.width=4}
+data<-LoadData("Desync")
+ProbeID<-"A_23_P11071"
+model<-GetModel("Desync",data,ProbeID)
+
+# Simulate normal 8h sleep after last sleep episode of FD
+idx1<-model@SWdist$Time>9 & model@SWdist$Time<=12
+idx2<-model@SWdist$Time>12 & model@SWdist$Time<=36
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx1,])# end 225, ZT9
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist<-rbind.data.frame(model@SWdist,model@SWdist[idx2,])
+model@SWdist$Time<-cumsum(rep(.1,length(model@SWdist$Time)))-468
+
+
+
+dd<-cbind.data.frame(TimeMaxES=Time[idx_MaxES[abs(MaxES)>quantile(abs(MaxES),prob=0.5)]])
+gg<-ggplot(aes(TimeMaxES),data=dd)+geom_histogram(color="black",fill=colorCode["Blood"],bins=200)
+gg<-gg+scale_x_continuous(breaks=seq(48,256,by=24))
+gg<-gg+theme(legend.position = "none",text=element_text(size = 8),plot.title = element_text(size=8))
+gg<-gg+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA)) 
+gg<-gg + annotate("ribbon",x=model@SWdist$Time,ymax=model@SWdist$Sleep*300,ymin=0,
+                    fill=alpha(colorCode[["SWforce"]],.5),color="black")
+gg<-gg+xlab("Time of maximum effect Size")+ylab("count")
+gg<-gg+coord_cartesian(xlim=c(48,256),ylim=c(-100,2500))
+
+# Annota
+gg<-gg+annotate("line",x=c(48,56),y=c(-50,-50),size=1,color="red")
+gg<-gg+annotate("text",label="in-phase",x=mean(c(48,56)),y=-75,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(132,141),y=c(-50,-50),size=1,color="red")
+gg<-gg+annotate("text",label="anti-phase",x=mean(c(132,141)),y=-75,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+annotate("line",x=c(216,225),y=c(-50,-50),size=1,color="red")
+gg<-gg+annotate("text",label="in-phase",x=mean(c(216,225)),y=-75,vjust=1,color="red",fontface = "bold",size=2)
+
+gg<-gg+theme(legend.position = "none",text=element_text(size = 8),plot.title = element_text(size=8))
+
+gg
+
+ggsave(gg,file=paste("../Figures/HistoDesync.pdf"),width = 100 ,height = 45 ,units = "mm")
+```
+
+```{r}
+Time<-cumsum(rep(.1,length(EffectSize)))+48
+relEff_inphase<-apply(EffectSizes,2,function(x){idx<-which.max(abs(x[Time>216 & Time <240]));return(x[idx])})
+dd<-cbind.data.frame(MaxEff=MaxES,ES_inphase=relEff_inphase)
+gg<-ggplot(aes(MaxEff,ES_inphase),data=dd)+geom_point(color=colorCode["Blood"],size=.5)+ylab("Effect size in-phase [recovery]")+xlab("Maximum Effect Size")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA))+theme(legend.position = "none",text=element_text(size = 8),plot.title = element_text(size=8))
+
+ggsave(gg,file=paste("../Figures/ESDesync.pdf"),width = 100 ,height = 45 ,units = "mm")
+```
+
+
+

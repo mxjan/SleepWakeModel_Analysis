@@ -1,0 +1,81 @@
+---
+title: "Save Fitted values"
+output: html_document
+---
+
+Simply save fitted data into an Rdata
+
+```{r}
+library(SWDMr)
+library(doSNOW)
+source("../FileLocation.R")
+source(MOUSEMODELS_FUN)
+NCORES<-7
+load(CORTEX_SWDMRDATA_RDATA)
+```
+
+
+```{r}
+fits<-read.table(CORTEXFITS,header=T,fill=T)
+fits<-fits[! duplicated(fits$Gene) & ! is.na(fits$BF),]
+
+swdmr <- SWDMr(SWdist=SWdf, Gexp=rna_expr)
+```
+
+
+```{r}
+cl <- makeCluster(NCORES)
+registerDoSNOW(cl)
+
+splitwork<-split(fits$Gene,seq(1,NCORES),drop=F)
+
+fitted <- foreach(i = 1:NCORES,.packages=c("SWDMr"),.combine="rbind") %dopar% {
+  Gene<-splitwork[[i]][1]
+  
+  model<-C57BL6_TimeCourse_GetFullModel(swdmr,Gene)
+  param<-fits[fits$Gene %in% Gene,c("Wake","Sleep","loggamma","omega","AmpSin","PhiSin")]
+  fitted<-SWDMrFit(model, param,method="Solve")
+
+  outs<-fitted$y1[fitted$time > 0]
+  cirs<-fitted$circ_sol[fitted$time[-1]>0]+model@intercept
+  sws<-fitted$SW_response[fitted$time[-1]>0]+fitted$trans_sol[fitted$time[-1]>0]+model@intercept
+
+  for (Gene in splitwork[[i]][seq(2,length(splitwork[[i]]))]){
+
+    model<-C57BL6_TimeCourse_GetFullModel(swdmr,Gene)
+    param<-fits[fits$Gene %in% Gene,c("Wake","Sleep","loggamma","omega","AmpSin","PhiSin")]
+    fitted<-SWDMrFit(model, param,method="Solve")
+
+    outs<-rbind(outs,fitted$y1[fitted$time > 0])
+    cirs<-rbind(cirs,fitted$circ_sol[fitted$time[-1]>0]+model@intercept)
+    sws<-rbind(sws,fitted$SW_response[fitted$time[-1]>0]+fitted$trans_sol[fitted$time[-1]>0]+model@intercept)
+  }
+  
+  rownames(outs)<-splitwork[[i]]
+  rownames(cirs)<-splitwork[[i]]
+  rownames(sws)<-splitwork[[i]]
+  return(list(outs=outs,cirs=cirs,sws=sws))
+}
+stopCluster(cl)
+
+# Reorder
+fitted_comb<-do.call(rbind, fitted[,1])
+fitted_circ<-do.call(rbind, fitted[,2])
+fitted_sw<-do.call(rbind, fitted[,3])
+
+fitted_comb<-fitted_comb[fits$Gene,]
+fitted_circ<-fitted_circ[fits$Gene,]
+fitted_sw<-fitted_sw[fits$Gene,]
+
+colnames(fitted_comb)<-as.character(seq(0.1,264,by=.1))
+colnames(fitted_circ)<-as.character(seq(0.1,264,by=.1))
+colnames(fitted_sw)<-as.character(seq(0.1,264,by=.1))
+
+fitted_CortexFullModel<-fitted_comb
+```
+
+
+```{r}
+save(fitted_CortexFullModel,fitted_circ,fitted_sw,file=CORTEXFITTED_RDATA)
+```
+

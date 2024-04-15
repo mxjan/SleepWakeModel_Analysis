@@ -1,0 +1,708 @@
+---
+title: "Example Strange Dynamics"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+Shows genes with well known dynamics like Bmal1 (Arntl) in the liver following a circadian dynamics (as a sine-wave). Or Homer1 following sleep-wake distribution (as a process-S of sleep).
+
+Shows also genes with stranger dynamics that we originally could not explain using sine-wave or a process-S
+
+
+# LIBS
+
+```{r}
+library(patchwork)
+source("../FileLocation.R")
+source(RASTERPLOT_FUN)
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+colorCode<-ColorCode()
+```
+
+# Plot data
+
+Load dataset in mouse
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+A function to add a straight line between time-points, baseline is replicated 
+
+```{r}
+AddFitMouse<-function(Gene,dataMouse){
+  fitBSL<-MeanBSLfit(dataMouse$rna_expr,Gene,bsl = 48)
+  fitRec<-MeanBSLfit(dataMouse$rna_expr,Gene,bsl = 222)
+  fitBSL_rep<-MeanBSLfit_Rep(dataMouse$rna_expr,Gene,bsl = 48)
+  addfits<-list(fitBSL,fitBSL_rep,fitRec)
+  return(addfits)
+}
+colorf<-c("black","grey25","black");ltys<-c("solid","42","solid")
+```
+
+Shows Homer1, Bmal1 and Acot11
+
+
+```{r}
+Homer1_c<-RasterPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Homer1",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+Homer1_c
+```
+
+
+```{r,fig.width=3,fig.height=6}
+Homer1_c<-RasterPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Homer1",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+Homer1_c
+
+pbmal_c<-RasterPlot(ProbeGene = "Arntl",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Arntl",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+pbmal_c
+
+pbmal_l<-RasterPlot(ProbeGene = "Arntl",Dataset = "Liver",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Arntl",dataMouseLiver),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+pbmal_l
+
+pacot_c<-RasterPlot(ProbeGene = "Acot11",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Acot11",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+pacot_c
+```
+
+Shows NCOR1 in human that decrease expression when sleeping in anti-phase, and decrease expression when awake during contant routine.
+
+Load data
+
+```{r}
+dataHuman<-LOADHUMAN()
+```
+
+Function to add straight line between time-point in human
+
+```{r}
+AddFitHuman<-function(Gene,dataHumanExpr,EvalTime=NULL){
+  fitBSL<-MeanBSLfit_Rep(dataHuman$HT_Desync,Gene,bsl = 67,EvalTime)
+  fitRec<-MeanBSLfit(dataHumanExpr,Gene,bsl = 1e5)
+  addfits<-list(fitBSL,fitRec)
+  return(addfits)
+}
+```
+
+
+```{r,fig.width=3,fig.height=6}
+pncor1_sync<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(3),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Desync),ColsAddFits = c(rgb(0,0,0,0),"black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,45,0,0))
+pncor1_desync<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(6),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Desync),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+
+  theme(plot.margin = margin(0,45,0,0))
+pncor1_ctr<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Ctr",DaysShows = c(10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Ext,EvalTime = seq(208,235,by=4)),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,45,0,0))
+pncor1_res<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Res",DaysShows = c(10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Res,EvalTime = seq(208,235,by=4)),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,45,0,0))
+
+
+
+pncor1_sync<-RemoveXaxis(pncor1_sync)
+pncor1_desync<-RemoveXaxis(pncor1_desync)
+pncor1_desync<-RemoveYlab(pncor1_desync)
+pncor1_ctr<-RemoveXaxis(pncor1_ctr)
+pncor1_ctr<-RemoveYlab(pncor1_ctr)
+pncor1_res<-RemoveYlab(pncor1_res)
+
+pncor1_sync<-pncor1_sync+annotate("line",x=c(26,26),y=c(-3,-2),size=1,color="red",linetype="solid")
+pncor1_sync<-pncor1_sync+annotate("text",label="FD in-\nphase",x=27,y=-2.5,hjust=0,color="red",fontface = "bold")
+pncor1_desync<-pncor1_desync+annotate("line",x=c(26,26),y=c(-6,-5),size=1,color="red",linetype="solid")
+pncor1_desync<-pncor1_desync+annotate("text",label="FD anti-\nphase",x=27,y=-5.5,hjust=0,color="red",fontface = "bold")
+
+pncor1_ctr<-pncor1_ctr+annotate("line",x=c(26,26),y=c(-10,-9),size=1,color="red",linetype="solid")
+pncor1_ctr<-pncor1_ctr+annotate("text",label="10h sleep +\nCR",x=27,y=-9.5,hjust=0,color="red",fontface = "bold")
+pncor1_res<-pncor1_res+annotate("line",x=c(26,26),y=c(-10,-9),size=1,color="red",linetype="solid")
+pncor1_res<-pncor1_res+annotate("text",label="6h sleep +\nCR",x=27,y=-9.5,hjust=0,color="red",fontface = "bold")
+
+(pncor1_sync/pncor1_desync/pncor1_ctr/pncor1_res)+plot_layout(heights  = c(1,1,1,1))
+
+```
+
+```{r,fig.width=10,fig.height=5}
+Homer1_c<-RemoveYlab(Homer1_c)+ggtitle(substitute(paste(italic("Homer1")," - Cortex")))
+pbmal_c<-RemoveYlab(pbmal_c)+ggtitle(substitute(paste(italic("Bmal1")," - Cortex")))
+pbmal_l<-RemoveYlab(pbmal_l)+ggtitle(substitute(paste(italic("Bmal1")," - Liver")))
+pacot_c<-RemoveYlab(pacot_c)+ggtitle(substitute(paste(italic("Acot11")," - Liver")))
+pncor1_sync<-RemoveYlab(pncor1_sync)+ggtitle(substitute(paste(italic("NCOR1")," - Blood")))
+
+
+Homer1_c<-Homer1_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_c<-pbmal_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_l<-pbmal_l+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pacot_c<-pacot_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_sync<-pncor1_sync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_desync<-pncor1_desync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_ctr<-pncor1_ctr+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_res<-pncor1_res+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+
+
+ggF<-Homer1_c|pbmal_l|pbmal_c|pacot_c|(pncor1_sync/pncor1_desync/pncor1_ctr/pncor1_res)
+ggF
+
+ggsave(paste(FIGUREDIR,"ExampleGeneExpression.pdf",sep=""), width = 200*1.2, height = 150*1.2, units = "mm",plot = ggF)
+```
+
+
+
+# Plot data with fits
+
+Now we plot the same genes with fits (black line) with sleep-wake response and circadian response on the oscillator
+
+```{r,fig.width=8,fig.height=6}
+homer1_c<-RasterPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,BSL_RepLine = 0,AddASkeldonSol = T,AddLowerUpperEquilibrium = F)
+homer1_c
+
+pbmal_c<-RasterPlot(ProbeGene = "Arntl",Dataset = "Cortex",DaysShows = c(2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,BSL_RepLine = 0,AddASkeldonSol = T,AddLowerUpperEquilibrium = F)
+pbmal_c
+
+pbmal_l<-RasterPlot(ProbeGene = "Arntl",Dataset = "Liver",DaysShows = c(2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,BSL_RepLine = 0,AddASkeldonSol = T,AddLowerUpperEquilibrium = F)
+pbmal_l
+
+pacot_c<-RasterPlot(ProbeGene = "Acot11",Dataset = "Cortex",DaysShows = c(2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,BSL_RepLine = 0,AddASkeldonSol = T,AddLowerUpperEquilibrium = F)
+pacot_c
+
+homer1_c | pbmal_l| pbmal_c | pacot_c
+```
+
+Ncor1
+
+```{r,fig.width=3,fig.height=6}
+# AddFits = AddFitMouse("Arntl",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys
+pncor1_sync<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(3),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),BSL_RepLine = 0,AddASkeldonSol = T)+theme(plot.margin = margin(0,45,0,0))
+pncor1_desync<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(6),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),BSL_RepLine = 0,AddASkeldonSol = T)+
+  theme(plot.margin = margin(0,45,0,0))
+pncor1_ctr<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Ctr",DaysShows = c(10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),BSL_RepLine = 0,AddASkeldonSol = T)+theme(plot.margin = margin(0,45,0,0))
+pncor1_res<-RasterPlot(ProbeGene = "A_24_P204214",Dataset = "Res",DaysShows = c(10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,ReplicatesSamples = T,PreviousHourShow = 12,ylim=c(11.3,12.5),BSL_RepLine = 0,AddASkeldonSol = T)+theme(plot.margin = margin(0,45,0,0))
+
+
+
+pncor1_sync<-RemoveXaxis(pncor1_sync)
+pncor1_desync<-RemoveXaxis(pncor1_desync)
+pncor1_desync<-RemoveYaxis(pncor1_desync)
+pncor1_ctr<-RemoveXaxis(pncor1_ctr)
+pncor1_ctr<-RemoveYaxis(pncor1_ctr)
+pncor1_res<-RemoveYaxis(pncor1_res)
+
+pncor1_sync<-pncor1_sync+annotate("line",x=c(26,26),y=c(-3,-2),size=1,color="red",linetype="solid")
+pncor1_sync<-pncor1_sync+annotate("text",label="FD in-\nphase",x=27,y=-2.5,hjust=0,color="red",fontface = "bold")
+pncor1_desync<-pncor1_desync+annotate("line",x=c(26,26),y=c(-6,-5),size=1,color="red",linetype="solid")
+pncor1_desync<-pncor1_desync+annotate("text",label="FD anti-\nphase",x=27,y=-5.5,hjust=0,color="red",fontface = "bold")
+
+pncor1_ctr<-pncor1_ctr+annotate("line",x=c(26,26),y=c(-10,-9),size=1,color="red",linetype="solid")
+pncor1_ctr<-pncor1_ctr+annotate("text",label="Ctr +\nCR",x=27,y=-9.5,hjust=0,color="red",fontface = "bold")
+pncor1_res<-pncor1_res+annotate("line",x=c(26,26),y=c(-10,-9),size=1,color="red",linetype="solid")
+pncor1_res<-pncor1_res+annotate("text",label="Rest. +\nCR",x=27,y=-9.5,hjust=0,color="red",fontface = "bold")
+
+(pncor1_sync/pncor1_desync/pncor1_ctr/pncor1_res)+plot_layout(heights  = c(1,1,1,1))
+
+```
+
+
+Get SWrc
+
+```{r}
+swdmr_c<-SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr)
+fits_c<-read.table(CORTEXFITS,header=T)
+SWrc_homer1c<-round(GetSWrcMouse("Homer1",swdmr_c,fits_c),2)
+SWrc_pbmal_c<-round(GetSWrcMouse("Arntl",swdmr_c,fits_c),2)
+SWrc_pacot_c<-round(GetSWrcMouse("Acot11",swdmr_c,fits_c),2)
+
+swdmr_l<-SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr)
+fits_l<-read.table(LIVERFITS,header=T)
+SWrc_pbmal_l<-round(GetSWrcMouse("Arntl",swdmr_l,fits_l),2)
+
+fits_h<-read.table(HUMANFITS,header=T)
+SWrc_NCOR1<-round(GetSWrcHuman("A_24_P204214",dataHuman$MeanSWdf,dataHuman$HT_Desync,fits_h),2)
+
+round(GetSWrcHuman(ProbeIDs = "A_24_P204214",SWdf_human = dataHuman$MeanSWdfExt,HT_Desync = dataHuman$HT_Desync,fits = fits_h,AfterCR = T),3)
+round(GetSWrcHuman(ProbeIDs = "A_24_P204214",SWdf_human = dataHuman$MeanSWdfRest,HT_Desync = dataHuman$HT_Desync,fits = fits_h,AfterCR = T),3)
+```
+
+```{r}
+GetZeta<-function(fits,Genes){
+  if ("ProbeName" %in% colnames(fits)){
+    fits<-fits[fits$ProbeName %in% Genes,]
+    zetas<-exp(fits$loggamma)/(2*fits$omega)
+    names(zetas)<-fits$ProbeName
+  }else{
+    fits<-fits[fits$Gene %in% Genes,]
+    zetas<-exp(fits$loggamma)/(2*fits$omega)
+    names(zetas)<-fits$Gene
+  }
+  return(zetas)
+}
+
+zeta_c<-round(GetZeta(fits_c,c("Arntl","Acot11","Homer1","Clock")),2)
+zeta_l<-round(GetZeta(fits_l,c("Arntl","Clock")),2)
+zeta_h<-round(GetZeta(fits_h,c("A_24_P204214")),2)
+```
+
+```{r}
+round(Gettau(c("Arntl","Acot11","Homer1","Clock"),fits_c),2)
+round(Gettau(c("Arntl","Clock"),fits_l),2)
+round(Gettau(c("A_24_P204214"),fits_h),2)
+```
+```{r}
+round(GetPhaseLag(c("Arntl","Acot11","Homer1","Clock"),fits_c,PosAmp = T),2)
+round(GetPhaseLag(c("Arntl","Clock"),fits_l,PosAmp = T),2)
+round(GetPhaseLag(c("A_24_P204214"),fits_h,PosAmp = T),2)
+```
+
+
+```{r,fig.width=10,fig.height=5}
+homer1_c<-RemoveYlab(homer1_c)+ggtitle(bquote(atop(paste(italic("Homer1")," - Cortex"),paste("SWrc:",.(SWrc_homer1c),";",zeta,"=",.(zeta_c["Homer1"])))))
+pbmal_c<-RemoveYlab(pbmal_c)+ggtitle(bquote(atop(paste(italic("Bmal1")," - Cortex"),paste("SWrc:",.(SWrc_pbmal_c),";",zeta,"=",.(zeta_c["Arntl"])))))
+pbmal_l<-RemoveYlab(pbmal_l)+ggtitle(bquote(atop(paste(italic("Bmal1")," - Liver"),paste("SWrc:",.(SWrc_pbmal_l),";",zeta,"=",.(zeta_l["Arntl"])))))
+pacot_c<-RemoveYlab(pacot_c)+ggtitle(bquote(atop(paste(italic("Acot11")," - Cortex"),paste("SWrc:",.(SWrc_pacot_c),";",zeta,"=",.(zeta_c["Acot11"])))))
+pncor1_sync<-RemoveYlab(pncor1_sync)+ggtitle(bquote(atop(paste(italic("NCOR1")," - Blood"),paste("SWrc:",.(SWrc_NCOR1),";",zeta,"=",.(zeta_h["A_24_P204214"])))))
+
+
+ggF<-homer1_c|pbmal_l|pbmal_c|pacot_c|(pncor1_sync/pncor1_desync/pncor1_ctr/pncor1_res)
+ggF
+ggsave(paste(FIGUREDIR,"ExampleGeneExpression_Withfits.pdf",sep=""), width = 200*1.2, height = 150*1.2, units = "mm",plot = ggF)
+```
+
+
+# Clock
+
+
+```{r,fig.width=12,fig.height=5}
+source(RASTERPLOT_FUN)
+Gene<-"Clock"
+ggclock_l<-PlotMouseFit(Gene,"Liver",ASContribution = F,bsldashed = T)
+ggclock_l_resp<-PlotMouseFit(Gene,"Liver",ASContribution = T,bsldashed = T)
+ggclock_c<-PlotMouseFit(Gene,"Cortex",ASContribution = F,bsldashed = T)
+ggclock_C_resp<-PlotMouseFit(Gene,"Cortex",ASContribution = T,bsldashed = T)
+
+ggclock_l<-RemoveXaxis(ggclock_l)+ggtitle(paste(Gene,"-Liver",sep=""))+ylab("Expression")+theme(plot.margin = margin(0,0,0,0))
+ggclock_c<-RemoveXaxis(ggclock_c)+ggtitle(paste(Gene,"-Cortex",sep=""))+ylab("Expression")+theme(plot.margin = margin(0,0,0,0))
+ggclock_C_resp<-RemoveXaxis(ggclock_C_resp)+ggtitle(NULL)+theme(plot.margin = margin(0,0,0,0))
+ggclock_l_resp<-RemoveXaxis(ggclock_l_resp)+ggtitle(NULL)+theme(plot.margin = margin(0,0,0,0))
+
+ggclock_l_force<-PlotForces(Gene,"Liver")+theme(plot.margin = margin(0,2,2,2))
+ggclock_c_force<-PlotForces(Gene,"Cortex")+theme(plot.margin = margin(0,2,2,2))
+
+layout <- '
+AB
+CD
+EF
+'
+
+# Force
+
+
+
+
+ggF<-wrap_plots(A=ggclock_l,B=ggclock_c,C=ggclock_l_resp,D=ggclock_C_resp,E=ggclock_l_force,"F"=ggclock_c_force, design = layout,heights = c(.5,.25,.25))
+ggF
+
+ggsave(paste(FIGUREDIR,"ExampleClock.pdf",sep=""), width = 200*1.2, height = 80*1.2, units = "mm",plot = ggF)
+```
+
+SWrc
+
+```{r}
+round(GetSWrcMouse(Gene,swdmr_c,fits_c),2)
+round(GetSWrcMouse(Gene,swdmr_l,fits_l),2)
+```
+
+# Linear
+
+## Plot data
+
+Load dataset in mouse
+
+```{r}
+source(LINEARPLOT_FUN)
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+A function to add a straight line between time-points, baseline is replicated 
+
+```{r}
+AddFitMouse<-function(Gene,dataMouse){
+  fitBSL<-MeanBSLfit(dataMouse$rna_expr,Gene,bsl = 48)
+  fitRec<-MeanBSLfit(dataMouse$rna_expr,Gene,bsl = 120)
+  fitBSL_rep<-MeanBSLfit_Rep(dataMouse$rna_expr[dataMouse$rna_expr$Time <= 120,],Gene,bsl = 48)
+  fitRec2<-MeanBSLfit(dataMouse$rna_expr[dataMouse$rna_expr$Time > 120,],Gene,bsl = 222)
+  fitBSL2<-MeanBSLfit_Rep(dataMouse$rna_expr[dataMouse$rna_expr$Time <= 222,],Gene,bsl = 48)
+  fitBSL2$y1<-fitBSL2$y1[fitBSL2$time>102]
+  fitBSL2$time<-fitBSL2$time[fitBSL2$time>102]
+  addfits<-list(fitBSL,fitBSL_rep,fitRec,fitRec2,fitBSL2)
+  return(addfits)
+}
+colorf<-c("black","grey25","black","grey25","black");ltys<-c("solid","42","solid","solid","42")
+```
+
+
+## Clock
+
+
+```{r,fig.width=12,fig.height=5}
+source(LINEARPLOT_FUN)
+Gene<-"Clock"
+ggclock_l<-LinearPlot(Gene,"Liver",AddASkeldonSol = F,BSL_RepLine  = T,DaysShows = c(1,2,3,4,5,10),MeanPointSize = 2)
+ggclock_l_resp<-LinearPlot(Gene,"Liver",AddASkeldonSol = T,DaysShows = c(1,2,3,4,5,10),ModelFitLine = 0,MeanPointSize = 0,AddCISegment = F,AddIntercept = F,ylim=c(-1,1))
+ggclock_c<-LinearPlot(Gene,"Cortex",AddASkeldonSol = F,BSL_RepLine  = T,DaysShows = c(1,2,3,4,5,10),MeanPointSize = 2)
+ggclock_C_resp<-LinearPlot(Gene,"Cortex",AddASkeldonSol = T,DaysShows = c(1,2,3,4,5,10),ModelFitLine = 0,MeanPointSize = 0,AddCISegment = F,AddIntercept = F,ylim=c(-.15,.25))
+
+ggclock_l<-RemoveXaxis(ggclock_l)+ggtitle(paste(Gene,"-Liver",sep=""))+ylab("Expression\n[log2 CPM]")+theme(plot.margin = margin(0,0,0,0))
+ggclock_c<-RemoveXaxis(ggclock_c)+ggtitle(paste(Gene,"-Cortex",sep=""))+ylab(NULL)+theme(plot.margin = margin(0,0,0,0))
+ggclock_C_resp<-RemoveXaxis(ggclock_C_resp)+ggtitle(NULL)+theme(plot.margin = margin(0,0,0,0))+ylab(NULL)
+ggclock_l_resp<-RemoveXaxis(ggclock_l_resp)+ggtitle(NULL)+theme(plot.margin = margin(0,0,0,0))+ylab("Responses")
+ggclock_l_force<-LinearPlot(Gene,"Liver",AddASkeldonSol = F,DaysShows = c(1,2,3,4,5,10),ModelFitLine = 0,MeanPointSize = 0,AddCISegment = F,AddIntercept = F,ylim=c(-0.018,0.018),PlotForces = T)+ylab("Drives")
+ggclock_c_force<-LinearPlot(Gene,"Cortex",AddASkeldonSol = F,DaysShows = c(1,2,3,4,5,10),ModelFitLine = 0,MeanPointSize = 0,AddCISegment = F,AddIntercept = F,ylim=c(-0.03,0.03),PlotForces = T)+ylab(NULL)
+
+layout <- '
+AB
+CD
+EF
+'
+
+# Force
+
+
+ggF<-wrap_plots(A=ggclock_l,B=ggclock_c,C=ggclock_l_resp,D=ggclock_C_resp,E=ggclock_l_force,"F"=ggclock_c_force, design = layout,heights = c(.5,.25,.25))
+ggF
+
+ggsave(paste(FIGUREDIR,"ExampleClock.pdf",sep=""), width = 210*1.2, height = 80*1.2, units = "mm",plot = ggF)
+```
+
+Shows Homer1, Bmal1 and Acot11
+
+
+```{r}
+source(LINEARPLOT_FUN)
+Homer1_c<-LinearPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Homer1",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)
+Homer1_c
+```
+
+```{r,fig.width=6,fig.height=3}
+Homer1_c<-LinearPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Homer1",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)+coord_cartesian(xlim=c(24,230))
+Homer1_c
+
+pbmal_c<-LinearPlot(ProbeGene = "Arntl",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Arntl",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)+coord_cartesian(xlim=c(24,230))
+pbmal_c
+
+pbmal_l<-LinearPlot(ProbeGene = "Arntl",Dataset = "Liver",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Arntl",dataMouseLiver),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)+coord_cartesian(xlim=c(24,230))
+pbmal_l
+
+pacot_c<-LinearPlot(ProbeGene = "Acot11",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,
+                    AddFits = AddFitMouse("Acot11",dataMouseCortex),ColsAddFits = colorf,LtyAddFits = ltys,AddSleepWake = T)+coord_cartesian(xlim=c(24,230))
+pacot_c
+```
+
+
+Shows NCOR1 in human that decrease expression when sleeping in anti-phase, and decrease expression when awake during contant routine.
+
+Load data
+
+```{r}
+dataHuman<-LOADHUMAN()
+```
+
+Function to add straight line between time-point in human
+
+```{r}
+AddFitHuman<-function(Gene,dataHumanExpr,EvalTime=NULL){
+  fitBSL<-MeanBSLfit_Rep(dataHuman$HT_Desync,Gene,bsl = 67,EvalTime)
+  fitRec<-MeanBSLfit(dataHumanExpr,Gene,bsl = 1e5)
+  addfits<-list(fitBSL,fitRec)
+  return(addfits)
+}
+```
+
+
+```{r,fig.width=8,fig.height=3}
+Range<-GetRangeExpressionHS("A_24_P204214")
+
+pncor1_sync<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(2,3),MeanPointSize = 3,npretty = 3,ModelFitLine = 0,ylim=Range$ylim1,
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Desync),ColsAddFits = c(rgb(0,0,0,0),"black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(42,72),ylim=Range$ylim1)+ggtitle("FD in-phase")
+
+pncor1_desync<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(5,6),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ylim=Range$ylim1,
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Desync),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+
+  theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(114,144),ylim=Range$ylim1)+ggtitle("FD anti-phase")
+
+
+pncor1_ctr<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Ctr",DaysShows = c(9,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ylim=Range$ylim1,
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Ext,EvalTime = seq(208,235,by=4)),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim1)+ggtitle("10h sleep + CR")
+
+pncor1_res<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Res",DaysShows = c(9,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,ylim=Range$ylim1,
+                          AddFits = AddFitHuman("A_24_P204214",dataHuman$HT_Res,EvalTime = seq(208,235,by=4)),ColsAddFits = c("grey25","black"),LtyAddFits = c("42","solid"),AddSleepWake = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim1)+ggtitle("6h sleep + CR")
+
+ggF<-pncor1_sync |
+RemoveYaxis(pncor1_desync) |
+(pncor1_ctr) |
+RemoveYaxis(pncor1_res)
+
+```
+
+
+
+```{r,fig.height=8,fig.width=8}
+Homer1_c<-RemoveXaxis(Homer1_c)+ggtitle(substitute(paste(italic("Homer1")," - Cortex")))
+pbmal_c<-RemoveXaxis(pbmal_c)+ggtitle(substitute(paste(italic("Bmal1")," - Cortex")))
+pbmal_l<-RemoveXaxis(pbmal_l)+ggtitle(substitute(paste(italic("Bmal1")," - Liver")))
+pacot_c<-pacot_c+ggtitle(substitute(paste(italic("Acot11")," - Cortex")))
+pncor1_sync<-RemoveYlab(pncor1_sync)#+ggtitle(substitute(paste(italic("NCOR1")," - Blood","\nIn-phase")))
+
+
+Homer1_c<-Homer1_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_c<-pbmal_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_l<-pbmal_l+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pacot_c<-pacot_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_sync<-pncor1_sync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_desync<-pncor1_desync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_ctr<-pncor1_ctr+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_res<-pncor1_res+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+
+HP<-(pncor1_sync|RemoveYaxis(pncor1_desync)|RemoveYaxis(pncor1_ctr)|RemoveYaxis(pncor1_res))
+HP<-HP+plot_annotation(title = )
+ggF<-Homer1_c/pbmal_l/pbmal_c/pacot_c/(HP)+plot_layout(heights = c(1,1,1,1,1.2))
+ggF
+
+ggsave(paste(FIGUREDIR,"ExampleGeneExpressionLinear.pdf",sep=""), width = 125*1.5, height = 150*1.5, units = "mm",plot = ggF)
+```
+
+## Plot data with fits
+Shows Homer1, Bmal1 and Acot11
+
+
+```{r}
+source(LINEARPLOT_FUN)
+Homer1_c<-LinearPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(18,240))
+Homer1_c
+```
+
+
+
+
+
+```{r,fig.width=6,fig.height=3}
+Homer1_c<-LinearPlot(ProbeGene = "Homer1",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(24,230))
+Homer1_c
+
+pbmal_c<-LinearPlot(ProbeGene = "Arntl",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(24,230))
+pbmal_c
+
+pbmal_l<-LinearPlot(ProbeGene = "Arntl",Dataset = "Liver",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(24,230))
+pbmal_l
+
+pacot_c<-LinearPlot(ProbeGene = "Acot11",Dataset = "Cortex",DaysShows = c(1,2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(24,230))
+pacot_c
+```
+
+
+Shows NCOR1 in human that decrease expression when sleeping in anti-phase, and decrease expression when awake during contant routine.
+
+Load data
+
+```{r}
+dataHuman<-LOADHUMAN()
+```
+
+
+```{r,fig.width=8,fig.height=3}
+
+Range<-GetRangeExpressionHS("A_24_P204214")
+
+pncor1_sync<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(2,3),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,ylim=Range$ylim1,AddSleepWake = T,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(42,72),ylim=Range$ylim1)+ggtitle("FD in-phase")
+
+pncor1_desync<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Desync",DaysShows = c(5,6),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,ylim=Range$ylim1,AddSleepWake = T,AddASkeldonSol = T)+
+  theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(114,144),ylim=Range$ylim1)+ggtitle("FD anti-phase")
+
+
+pncor1_ctr<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Ctr",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,ylim=Range$ylim2,AddSleepWake = T,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim2)+ggtitle("10h sleep + CR")
+
+pncor1_res<-LinearPlot(ProbeGene = "A_24_P204214",Dataset = "Res",MeanPointSize = 3,npretty = 3,ModelFitLine = 1,ylim=Range$ylim2,AddSleepWake = T,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim2)+ggtitle("6h sleep + CR")
+
+ggF<-pncor1_sync |
+RemoveYaxis(pncor1_desync) |
+(pncor1_ctr) |
+RemoveYaxis(pncor1_res)
+ggF
+```
+
+
+
+```{r,fig.height=8,fig.width=8}
+Homer1_c<-RemoveXaxis(Homer1_c)+ggtitle(substitute(paste(italic("Homer1")," - Cortex")))
+pbmal_c<-RemoveXaxis(pbmal_c)+ggtitle(substitute(paste(italic("Bmal1")," - Cortex")))
+pbmal_l<-RemoveXaxis(pbmal_l)+ggtitle(substitute(paste(italic("Bmal1")," - Liver")))
+pacot_c<-pacot_c+ggtitle(substitute(paste(italic("Acot11")," - Cortex")))
+pncor1_sync<-RemoveYlab(pncor1_sync)#+ggtitle(substitute(paste(italic("NCOR1")," - Blood","\nIn-phase")))
+
+
+Homer1_c<-Homer1_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_c<-pbmal_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pbmal_l<-pbmal_l+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pacot_c<-pacot_c+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_sync<-pncor1_sync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_desync<-pncor1_desync+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_ctr<-pncor1_ctr+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+pncor1_res<-pncor1_res+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+
+HP<-(pncor1_sync|RemoveYaxis(pncor1_desync)|RemoveYaxis(pncor1_ctr)|RemoveYaxis(pncor1_res))
+HP<-HP+plot_annotation(title = )
+ggF<-Homer1_c/pbmal_l/pbmal_c/pacot_c/(HP)+plot_layout(heights = c(1,1,1,1,1.2))
+ggF
+
+# ggsave(paste(FIGUREDIR,"ExampleGeneExpressionLinear.pdf",sep=""), width = 200*1.2, height = 160*1.2, units = "mm",plot = ggF)
+```
+
+
+Get SWrc
+
+```{r}
+swdmr_c<-SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr)
+fits_c<-read.table(CORTEXFITS,header=T)
+SWrc_homer1c<-round(GetSWrcMouse("Homer1",swdmr_c,fits_c),2)
+SWrc_pbmal_c<-round(GetSWrcMouse("Arntl",swdmr_c,fits_c),2)
+SWrc_pacot_c<-round(GetSWrcMouse("Acot11",swdmr_c,fits_c),2)
+
+swdmr_l<-SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr)
+fits_l<-read.table(LIVERFITS,header=T)
+SWrc_pbmal_l<-round(GetSWrcMouse("Arntl",swdmr_l,fits_l),2)
+
+fits_h<-read.table(HUMANFITS,header=T)
+SWrc_NCOR1<-round(GetSWrcHuman("A_24_P204214",dataHuman$MeanSWdf,dataHuman$HT_Desync,fits_h),2)
+
+round(GetSWrcHuman(ProbeIDs = "A_24_P204214",SWdf_human = dataHuman$MeanSWdfExt,HT_Desync = dataHuman$HT_Desync,fits = fits_h,AfterCR = T),3)
+round(GetSWrcHuman(ProbeIDs = "A_24_P204214",SWdf_human = dataHuman$MeanSWdfRest,HT_Desync = dataHuman$HT_Desync,fits = fits_h,AfterCR = T),3)
+```
+
+```{r}
+GetZeta<-function(fits,Genes){
+  if ("ProbeName" %in% colnames(fits)){
+    fits<-fits[fits$ProbeName %in% Genes,]
+    zetas<-exp(fits$loggamma)/(2*fits$omega)
+    names(zetas)<-fits$ProbeName
+  }else{
+    fits<-fits[fits$Gene %in% Genes,]
+    zetas<-exp(fits$loggamma)/(2*fits$omega)
+    names(zetas)<-fits$Gene
+  }
+  return(zetas)
+}
+
+zeta_c<-round(GetZeta(fits_c,c("Arntl","Acot11","Homer1","Clock")),2)
+zeta_l<-round(GetZeta(fits_l,c("Arntl","Clock")),2)
+zeta_h<-round(GetZeta(fits_h,c("A_24_P204214")),2)
+```
+
+```{r}
+round(Gettau(c("Arntl","Acot11","Homer1","Clock"),fits_c),2)
+round(Gettau(c("Arntl","Clock"),fits_l),2)
+round(Gettau(c("A_24_P204214"),fits_h),2)
+```
+
+```{r}
+round(GetPhaseLag(c("Arntl","Acot11","Homer1","Clock"),fits_c,PosAmp = T),2)
+round(GetPhaseLag(c("Arntl","Clock"),fits_l,PosAmp = T),2)
+round(GetPhaseLag(c("A_24_P204214"),fits_h,PosAmp = T),2)
+```
+
+```{r,fig.height=8,fig.width=8}
+Homer1_c<-Homer1_c+ggtitle(bquote(paste(paste(italic("Homer1")," - Cortex"),paste("; SWrc:",.(SWrc_homer1c),"; ",zeta,"=",.(zeta_c["Homer1"])))))
+pbmal_c<-pbmal_c+ggtitle(bquote(paste(paste(italic("Bmal1")," - Cortex"),paste("; SWrc:",.(SWrc_pbmal_c),"; ",zeta,"=",.(zeta_c["Arntl"])))))
+pbmal_l<-pbmal_l+ggtitle(bquote(paste(paste(italic("Bmal1")," - Liver"),paste("; SWrc:",.(SWrc_pbmal_l),"; ",zeta,"=",.(zeta_l["Arntl"])))))
+pacot_c<-pacot_c+ggtitle(bquote(paste(paste(italic("Acot11")," - Cortex"),paste("; SWrc:",.(SWrc_pacot_c),"; ",zeta,"=",.(zeta_c["Acot11"])))))
+
+# pncor1_sync<-pncor1_sync+ggtitle(bquote(atop(paste(italic("NCOR1")," - Blood"),paste("SWrc:",.(SWrc_NCOR1),";",zeta,"=",.(zeta_h["A_24_P204214"])))))
+
+HP<-(pncor1_sync|RemoveYaxis(pncor1_desync)|(pncor1_ctr)|RemoveYaxis(pncor1_res))
+HP<-HP+plot_annotation(title = )
+ggF<-Homer1_c/pbmal_l/pbmal_c/pacot_c/(HP)+plot_layout(heights = c(1,1,1,1,1.2))
+ggF
+
+
+ggsave(paste(FIGUREDIR,"ExampleGeneExpressionLinear_Withfits.pdf",sep=""), width = 125*1.5, height = 150*1.5, units = "mm",plot = ggF)
+```
+
+## Bootstrap results
+
+```{r}
+CortexFB<-read.table(CORTEXFITSBOOT,header=T)
+LiverFB<-read.table(LIVERFITSBOOT,header=T)
+CortexFB<-CortexFB[CortexFB$Gene %in% CortexFB$Gene[CortexFB$FittingType == "DataFitting" & CortexFB$BF > exp(1)],]
+LiverFB<-LiverFB[LiverFB$Gene %in% LiverFB$Gene[LiverFB$FittingType == "DataFitting" & LiverFB$BF > exp(1)],]
+```
+
+
+```{r}
+CortSWrcQuant<-CortexFB %>% group_by(Gene) %>% summarise(q2.5_SWrc=quantile(SWrc,prob=0.025),
+                                            q97.5_SWrc=quantile(SWrc,prob=0.975))
+LivSWrcQuant<-LiverFB %>% group_by(Gene) %>% summarise(q2.5_SWrc=quantile(SWrc,prob=0.025),
+                                            q97.5_SWrc=quantile(SWrc,prob=0.975))
+rownames(CortSWrcQuant)<-CortSWrcQuant$Gene
+rownames(LivSWrcQuant)<-LivSWrcQuant$Gene
+nrow(CortSWrcQuant[CortSWrcQuant$q97.5_SWrc < .25,])
+nrow(CortSWrcQuant[CortSWrcQuant$q2.5_SWrc > .75,])
+nrow(CortSWrcQuant[CortSWrcQuant$q2.5_SWrc > .25 & CortSWrcQuant$q97.5_SWrc < .75,])
+
+nrow(LivSWrcQuant[LivSWrcQuant$q97.5_SWrc < .25,])
+nrow(LivSWrcQuant[LivSWrcQuant$q2.5_SWrc > .75,])
+nrow(LivSWrcQuant[LivSWrcQuant$q2.5_SWrc > .25 & LivSWrcQuant$q97.5_SWrc < .75,])
+```
+
+```{r}
+ssg<-LivSWrcQuant$Gene[LivSWrcQuant$Gene %in% CortSWrcQuant$Gene]
+CortSWrcQuant_SSG<-CortSWrcQuant[ssg,]
+LivSWrcQuant_SSG<-LivSWrcQuant[ssg,]
+
+nrow(CortSWrcQuant_SSG[CortSWrcQuant_SSG$q2.5_SWrc > LivSWrcQuant_SSG$q97.5_SWrc,])
+nrow(LivSWrcQuant_SSG[LivSWrcQuant_SSG$q2.5_SWrc > CortSWrcQuant_SSG$q97.5_SWrc,])
+```
+
+```{r}
+GG<-CortSWrcQuant_SSG[CortSWrcQuant_SSG$q2.5_SWrc > LivSWrcQuant_SSG$q97.5_SWrc,]
+
+```
+
+
+
+```{r}
+
+quantile(x[x$Gene == "Arntl",]$SWrc,prob=c(0.025,0.975))
+quantile(x[x$Gene == "Homer1",]$SWrc,prob=c(0.025,0.975))
+quantile(x[x$Gene == "Acot11",]$SWrc,prob=c(0.025,0.975))
+
+quantile(x[x$Gene == "Arntl",]$zeta,prob=c(0.025,0.975))
+quantile(x[x$Gene == "Homer1",]$zeta,prob=c(0.025,0.975))
+quantile(x[x$Gene == "Acot11",]$zeta,prob=c(0.025,0.975))
+```
+
+
+
+```{r}
+sessionInfo()
+```

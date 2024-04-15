@@ -1,0 +1,324 @@
+---
+title: "Gene Quantification with STAR"
+author: "Maxime Jan"
+date: '06.03.2019'
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+#Libs
+
+
+```{r}
+library(biomaRt)
+library(edgeR)
+library(RColorBrewer)
+source("../../FileLocation.R")
+
+#devtools::install_github("zhangyuqing/sva-devel")
+# Zhang, Y., Parmigiani, G., & Johnson, W. E. (2020). ComBat-Seq: batch effect adjustment for RNA-Seq count data. bioRxiv, 904730.
+library(sva)
+source(COLORFUN)
+```
+
+# Functions
+
+```{r}
+# Plot MDS and PCA
+plotDimRed<-function(exprd,meta){
+  
+  color<-GetCol()
+  pchs<-rep(19,nrow(meta))
+  pchs[meta$SD_NSD == "SD"]<-17
+  
+  par(mfrow=c(2,2))
+  plotMDS(exprd,col=color[as.factor(meta$Time)],pch=pchs,main="Color by Time")
+  plotMDS(exprd,col=color[as.factor(meta$ZT)],pch=pchs,main="Color by ZT")
+  plotMDS(exprd,col=color[as.factor(meta$Batch)],pch=pchs,main="Color by Batch")
+  plotMDS(exprd,col=color[BATCHAlign],pch=pchs,main="Color by uniquely mapped %")
+  
+  par(mfrow=c(2,2))
+  pc<-prcomp(t(exprd),center=T,scale=T)
+  
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$Time)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by Time")
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$ZT)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by ZT")
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$Batch)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by Batch")
+  plot(pc$x[,1],pc$x[,2],col=color[BATCHAlign],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by uniquely mapped % ")
+  
+  plot(meta$Time,pc$x[,1],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC1",main="Color by Time",xlim=c(0,84))
+  plot(meta$Time,pc$x[,2],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC2",main="Color by Time",xlim=c(0,84))
+  plot(meta$Time,pc$x[,3],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC3",main="Color by Time",xlim=c(0,84))
+  plot(meta$Time,pc$x[,4],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC4",main="Color by Time",xlim=c(0,84))
+}
+```
+
+
+# Meta Data
+
+Get meta data
+
+```{r}
+meta<-read.table(LIVERMETADATA,header=T,stringsAsFactors = F)
+rownames(meta)<-meta$SampleID
+
+TIME<-meta$Time
+TIME[TIME == 24]<-0
+TIME<-as.factor(TIME)
+
+BATCH<-as.factor(meta$Batch)
+
+color<-GetCol()
+```
+
+
+Get % of uniquely mapped reads (detected as batch effect below)
+
+```{r}
+pctUm<-rep(NA,nrow(meta))
+names(pctUm)<-rownames(meta)
+
+alldata<-matrix(nrow=nrow(meta),ncol=33)
+rownames(alldata)<-rownames(meta)
+
+LOGDIR<-paste(LIVERREADCOUNTSDIR,"Logs/",sep="")
+for (i in rownames(meta)){
+  filein<-paste(LOGDIR,i,"Log.final.out",sep='')
+  if (file.exists(filein)){
+    x<-read.table(filein,sep="\t",fill = T,stringsAsFactors = F)
+    pctUm[i]<-as.numeric(gsub(pattern = "%","",x[9,2])) #9
+    alldata[i,]<-x[,2]
+  }
+
+}
+colnames(alldata)<-x[,1]
+alldata<-alldata[! is.na(alldata[,1]),]
+```
+
+Alignment stats
+
+```{r}
+pctDif<-pctUm-mean(pctUm,na.rm=T)
+meta$pctDif<-pctDif
+
+
+BATCHAlign<-rep(0,nrow(meta))
+BATCHAlign[pctDif > 3] <- 1
+BATCHAlign[pctDif < -3] <- -1
+BATCHAlign<-as.factor(BATCHAlign)
+plot(pctDif,col=color[BATCHAlign],pch=19)
+
+qqnorm(pctDif,col=BATCHAlign,pch=19,ylab="Uniquely mapped %")
+qqline(pctDif)
+```
+
+
+
+```{r,fig.height=8,fig.width=8}
+par(mfrow=c(2,2))
+for (j in seq(1,33)){
+  res<-try(vals<-as.numeric(gsub("%","",alldata[,j])))
+  if (! any(is.na(vals))){
+     plot(vals,col=BATCHAlign,pch=19,main=colnames(alldata)[j])
+  }
+}
+```
+
+
+
+
+# Get counts
+
+Get Gene count matrix,
+
+we only counts the reads mapping the reverse strand (Illumina TruSeq stranded library preparation)
+
+```{r}
+CountsDIR<-LIVERREADCOUNTSDIR
+
+i<-"T0N1_1_L"
+x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''),stringsAsFactors = F)
+x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+
+GeneCounts<-matrix(nrow=nrow(x),ncol=nrow(meta))
+rownames(GeneCounts)<-x$V1
+colnames(GeneCounts)<-rownames(meta)
+
+for (i in rownames(meta)){
+  x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''))
+  x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+  
+  GeneCounts[,i]<-x$V4 # Take 'reverse' counts ($4)
+  
+}
+```
+
+# Filter low counts
+
+```{r}
+dim(GeneCounts)
+GeneCountsFilt<-GeneCounts[apply(GeneCounts,1,mean)>=10,]
+dim(GeneCountsFilt)
+```
+
+# Normalization with edgeR
+
+counts are normalized and transformed into log2 + 1
+
+```{r}
+edgeobj <- DGEList(counts=GeneCountsFilt,group = TIME)
+edgeobj <- calcNormFactors(edgeobj,method="TMM")
+design <- model.matrix(~0+TIME)
+cpmv<-cpm(edgeobj,normalized.lib.sizes=T,log=T,prior.count = 1)
+```
+
+# PCA cpm
+
+PCA shows a strong batch effect of sample with a different uniquely mapped %
+
+```{r pca_log2cpm, fig.width=6,fig.height=6}
+plotDimRed(cpmv,meta)
+```
+
+
+
+# Annotation using biomaRt
+
+```{r}
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+                          dataset = "mmusculus_gene_ensembl",host = "Oct2018.archive.ensembl.org")
+#mart<-useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",dataset = "mmusculus_gene_ensembl",host = "Oct2018.archive.ensembl.org",mirror ="uswest")
+#mart<-useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",dataset = "mmusculus_gene_ensembl")
+ttg <- biomaRt::getBM(
+  attributes = c("ensembl_gene_id","mgi_symbol"),
+  filters = "ensembl_gene_id",
+  values = rownames(GeneCounts),
+  mart = mart)
+dim(ttg)
+```
+
+```{r}
+cpmvFilt<-cpmv[rownames(cpmv) %in% ttg$ensembl_gene_id,]
+```
+
+
+# Examples gene expression
+
+Apob
+
+```{r}
+ID<-ttg[ttg$mgi_symbol == "Apob","ensembl_gene_id"]
+plot(meta$Time,as.numeric(cpmv[ID,]),col=GetCol()[BATCHAlign],xaxt="n",pch=19,xlim=c(0,78))
+axis(1,seq(0,120,by=12),seq(0,120,by=12));rect(24,-100,30,100,col=rgb(1,0,0,0.2))
+abline(v=seq(0,120,by=6),col=rgb(0,0,0,0.5),lty=2)
+```
+
+Acot11
+
+```{r}
+ID<-ttg[ttg$mgi_symbol == "Acot11","ensembl_gene_id"]
+plot(meta$Time,as.numeric(cpmv[ID,]),col=GetCol()[BATCHAlign],xaxt="n",pch=19,xlim=c(0,78))
+axis(1,seq(0,120,by=12),seq(0,120,by=12));rect(24,-100,30,100,col=rgb(1,0,0,0.2))
+abline(v=seq(0,120,by=6),col=rgb(0,0,0,0.5),lty=2)
+```
+
+Alb
+
+```{r}
+ID<-ttg[ttg$mgi_symbol == "Alb","ensembl_gene_id"]
+plot(meta$Time,as.numeric(cpmv[ID,]),col=GetCol()[BATCHAlign],xaxt="n",pch=19,xlim=c(0,78))
+axis(1,seq(0,120,by=12),seq(0,120,by=12));rect(24,-100,30,100,col=rgb(1,0,0,0.2))
+abline(v=seq(0,120,by=6),col=rgb(0,0,0,0.5),lty=2)
+```
+
+
+```{r,fig.width=6,fig.height=5}
+plotPCTD<-function(Gene){
+  ID<-ttg[ttg$mgi_symbol == Gene,"ensembl_gene_id"]
+  plot(meta$Time,as.numeric(cpmv[ID,]),col=GetCol()[BATCHAlign],xaxt="n",pch=19,xlim=c(0,78),main=Gene)
+  axis(1,seq(0,120,by=12),seq(0,120,by=12));rect(24,-100,30,100,col=rgb(1,0,0,0.2))
+  abline(v=seq(0,120,by=6),col=rgb(0,0,0,0.5),lty=2)
+}
+
+res<-apply(cpmv,1,function(x) {
+  fit<-lm(x~TIME)
+  return(residuals(fit))
+})
+cc<-cor(res,pctDif)
+par(mfrow=c(2,2))
+for (i in ttg[ttg$ensembl_gene_id %in% names(tail(sort(abs(cc[,1])),10)),"mgi_symbol"]){
+  plotPCTD(i)
+}
+```
+
+
+
+# Batch correction
+
+Correct the effect of % of uniquely mapped
+
+```{r, fig.width=6,fig.height=6}
+cpmvBC<-removeBatchEffect(cpmvFilt,batch=BATCH,design = model.matrix(~TIME), batch2 = BATCHAlign)
+plotDimRed(cpmvBC,meta)
+```
+
+Remove only the batch effect based on alignment stats seems to be sufficient
+
+```{r, fig.width=6,fig.height=6}
+cpmvBC<-removeBatchEffect(cpmvFilt,batch=BATCHAlign,design = model.matrix(~TIME))
+plotDimRed(cpmvBC,meta)
+```
+
+Try with SVA, ComBat
+
+```{r, fig.width=6,fig.height=6}
+modcombat<-model.matrix(~Time, data=meta)
+combat_edata = ComBat(dat=cpmvFilt, batch=BATCHAlign, mod=modcombat, par.prior=T, prior.plots=T)
+plotDimRed(combat_edata,meta)
+```
+
+
+# write results
+
+```{r}
+# Save metadata as Rdata
+rna_meta<-meta
+rna_meta$SampleID<-as.character(rna_meta$SampleID)
+rna_meta$ZT<-as.numeric(gsub("ZT","",as.character(rna_meta$ZT)))
+rna_meta$Batch<-as.numeric(rna_meta$Batch)
+rna_meta$Time<-as.numeric(rna_meta$Time)
+rna_meta
+save(rna_meta,file=LIVER_METADATA_RDATA)
+
+# Save Expression as with mgi symbol
+ttg<-ttg[! duplicated(ttg$ensembl_gene_id),]
+rownames(ttg)<-ttg$ensembl_gene_id
+rownames(cpmvBC)<-ttg[rownames(cpmvBC),"mgi_symbol"]
+# Rename for convenience
+rna_expr<-cpmvBC
+# Save
+save(rna_expr,file=LIVER_NORMEXPR_RDATA)
+```
+
+
+
+
+```{r}
+sessionInfo()
+```
+
+

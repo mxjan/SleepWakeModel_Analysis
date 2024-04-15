@@ -1,0 +1,569 @@
+---
+title: "Compare Different Models"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+# LIBS
+
+```{r}
+library(patchwork)
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(RASTERPLOT_FUN)
+library(parallel)
+colorCode<-ColorCode()
+NCORES<-7
+```
+
+Load data
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+dataHuman<-LOADHUMAN()
+```
+
+
+# Compare Bayesian Information Criterion (BIC)
+
+Here we compare the BIC value for a subset of genes within each datasets.
+
+## Rhythmic genes in baseline
+
+We take the rhythmic genes in baseline. These genes can be sleep-wake driven or circadian driven. 
+
+```{r}
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+RhythmicGenesBSL_Cortex<-parApply(cl,dataMouseCortex$rna_expr[dataMouseCortex$rna_expr$Time<=48,-which(colnames(dataMouseCortex$rna_expr) == "Time")],2,PvalCosineModel,Time=dataMouseCortex$rna_expr$Time[dataMouseCortex$rna_expr$Time<=48])
+RhythmicGenesBSL_Cortex<-p.adjust(RhythmicGenesBSL_Cortex,method="fdr")
+
+# Liver
+RhythmicGenesBSL_Liver<-parApply(cl,dataMouseLiver$rna_expr[dataMouseLiver$rna_expr$Time<=48,-which(colnames(dataMouseLiver$rna_expr) == "Time")],2,PvalCosineModel,Time=dataMouseLiver$rna_expr$Time[dataMouseLiver$rna_expr$Time<=48])
+RhythmicGenesBSL_Liver<-p.adjust(RhythmicGenesBSL_Liver,method="fdr")
+
+# Blood
+RhythmicGenesBSL_Human<-parApply(cl,dataHuman$HT_Desync[dataHuman$HT_Desync$Time<=80,-which(colnames(dataHuman$HT_Desync)%in% c("Time","Subjects"))],2,PvalCosineModel,Time=dataHuman$HT_Desync$Time[dataHuman$HT_Desync$Time<=80])
+RhythmicGenesBSL_Human<-p.adjust(RhythmicGenesBSL_Human,method="fdr")
+
+stopCluster(cl)
+```
+
+We get the top 1000 genes (ranked by p-value) per dataset
+
+```{r}
+ntake<-1000
+
+idx_c<-names(sort(RhythmicGenesBSL_Cortex)[1:ntake]);idx_c<-idx_c[!is.na(idx_c)]
+idx_l<-names(sort(RhythmicGenesBSL_Liver)[1:ntake]);idx_l<-idx_l[!is.na(idx_l)]
+idx_h<-names(sort(RhythmicGenesBSL_Human)[1:ntake]);idx_h<-idx_h[!is.na(idx_h)]
+```
+
+
+## BIC value of full, oscillator (Fc) and oscillator (Fsw)
+
+Get BIC value of precomputed model of oscillators
+
+Full model:
+
+```{r}
+BIC_Cortex_full<-dataMouseCortex$fits$BIC[dataMouseCortex$fits$Gene %in% idx_c]
+names(BIC_Cortex_full)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$Gene %in% idx_c]
+
+BIC_Liver_full<-dataMouseLiver$fits$BIC[dataMouseLiver$fits$Gene %in% idx_l]
+names(BIC_Liver_full)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$Gene %in% idx_l]
+
+BIC_Human_full<-dataHuman$fits$BIC[dataHuman$fits$ProbeName %in% idx_h]
+names(BIC_Human_full)<-dataHuman$fits$ProbeName[dataHuman$fits$ProbeName %in% idx_h]
+```
+
+Oscillator only driven by Fc
+
+```{r}
+fitsCortexDropSW<-read.table(CORTEXFITS_DropSW,header=T)
+BIC_Cortex_DropSW<-fitsCortexDropSW$BIC[fitsCortexDropSW$Gene %in% idx_c]
+names(BIC_Cortex_DropSW)<-fitsCortexDropSW$Gene[fitsCortexDropSW$Gene %in% idx_c]
+
+fitsLiverDropSW<-read.table(LIVERFITS_DropSW,header=T)
+BIC_Liver_DropSW<-fitsLiverDropSW$BIC[fitsLiverDropSW$Gene %in% idx_l]
+names(BIC_Liver_DropSW)<-fitsLiverDropSW$Gene[fitsLiverDropSW$Gene %in% idx_l]
+
+fitsHumanDropSW<-read.table(HUMANFITS_DropSW,header=T)
+BIC_Human_DropSW<-fitsHumanDropSW$BIC[fitsHumanDropSW$ProbeName %in% idx_h]
+names(BIC_Human_DropSW)<-fitsHumanDropSW$ProbeName[fitsHumanDropSW$ProbeName %in% idx_h]
+```
+
+Oscillator only driven by Fsw
+
+```{r}
+fitsCortexDropSin<-read.table(CORTEXFITS_DropSin,header=T)
+BIC_Cortex_DropSin<-fitsCortexDropSin$BIC[fitsCortexDropSin$Gene %in% idx_c]
+names(BIC_Cortex_DropSin)<-fitsCortexDropSin$Gene[fitsCortexDropSin$Gene %in% idx_c]
+
+fitsLiverDropSin<-read.table(LIVERFITS_DropSin,header=T)
+BIC_Liver_DropSin<-fitsLiverDropSin$BIC[fitsLiverDropSin$Gene %in% idx_l]
+names(BIC_Liver_DropSin)<-fitsLiverDropSin$Gene[fitsLiverDropSin$Gene %in% idx_l]
+
+fitsHumanDropSin<-read.table(HUMANFITS_DropSin,header=T)
+BIC_Human_DropSin<-fitsHumanDropSin$BIC[fitsHumanDropSin$ProbeName %in% idx_h]
+names(BIC_Human_DropSin)<-fitsHumanDropSin$ProbeName[fitsHumanDropSin$ProbeName %in% idx_h]
+```
+
+## BIC value of a flat model
+
+These are the same value as BF if you perform: 
+
+BF = exp((BIC_Human_flat-BIC_Human_full)/2)
+
+```{r}
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+BIC_Cortex_flat<-parApply(cl,dataMouseCortex$rna_expr[,which(colnames(dataMouseCortex$rna_expr) %in% idx_c)],2,BICFlatModel)
+names(BIC_Cortex_flat)<-colnames(dataMouseCortex$rna_expr)[which(colnames(dataMouseCortex$rna_expr) %in% idx_c)]
+
+# Liver
+BIC_Liver_flat<-parApply(cl,dataMouseLiver$rna_expr[,which(colnames(dataMouseLiver$rna_expr) %in% idx_l)],2,BICFlatModel)
+names(BIC_Liver_flat)<-colnames(dataMouseLiver$rna_expr)[which(colnames(dataMouseLiver$rna_expr) %in% idx_l)]
+
+# Human
+ExprHuman<-rbind.data.frame(dataHuman$HT_Desync,dataHuman$HT_Ext,dataHuman$HT_Res)
+BIC_Human_flat<-parApply(cl,ExprHuman[,which(colnames(ExprHuman) %in% idx_h)],2,BICFlatModel,
+                         Experiment = c(rep("Desync",nrow(dataHuman$HT_Desync)),rep("ExtRest",nrow(ExprHuman)-nrow(dataHuman$HT_Desync))))
+names(BIC_Human_flat)<-colnames(ExprHuman)[which(colnames(ExprHuman) %in% idx_h)]
+
+stopCluster(cl)
+```
+
+
+## BIC value of an ANOVA
+
+```{r}
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+BIC_Cortex_ANOVA<-parApply(cl,dataMouseCortex$rna_expr[,which(colnames(dataMouseCortex$rna_expr) %in% idx_c)],2,BICANOVAModel,Time = as.factor(dataMouseCortex$rna_expr$Time))
+names(BIC_Cortex_ANOVA)<-colnames(dataMouseCortex$rna_expr)[which(colnames(dataMouseCortex$rna_expr) %in% idx_c)]
+
+# Liver
+BIC_Liver_ANOVA<-parApply(cl,dataMouseLiver$rna_expr[,which(colnames(dataMouseLiver$rna_expr) %in% idx_l)],2,BICANOVAModel,Time = as.factor(dataMouseLiver$rna_expr$Time))
+names(BIC_Liver_ANOVA)<-colnames(dataMouseLiver$rna_expr)[which(colnames(dataMouseLiver$rna_expr) %in% idx_l)]
+
+# Human
+ExprHuman<-rbind.data.frame(dataHuman$HT_Desync,dataHuman$HT_Ext,dataHuman$HT_Res)
+BIC_Human_ANOVA<-parApply(cl,ExprHuman[,which(colnames(ExprHuman) %in% idx_h)],2,BICANOVAModel,Time = as.factor(ExprHuman$Time),
+                         Experiment = c(rep("Desync",nrow(dataHuman$HT_Desync)),rep("ExtRest",nrow(ExprHuman)-nrow(dataHuman$HT_Desync))))
+names(BIC_Human_ANOVA)<-colnames(ExprHuman)[which(colnames(ExprHuman) %in% idx_h)]
+
+stopCluster(cl)
+```
+
+## BIC value of circadian with masking
+
+In this model, we have a sine-wave and sleep-wake distribution explaining expression
+
+```{r}
+
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+# Sleep-Wake amount
+SleepPH<-aggregate(dataMouseCortex$SWdf$Sleep,list(ceiling(dataMouseCortex$SWdf$Time)),mean)
+WakePH<-aggregate(dataMouseCortex$SWdf$Wake,list(ceiling(dataMouseCortex$SWdf$Time)),mean)
+Sleep<-SleepPH[dataMouseCortex$rna_expr$Time,]$x
+Wake<-WakePH[dataMouseCortex$rna_expr$Time,]$x
+BIC_Cortex_Masking<-parApply(cl,dataMouseCortex$rna_expr[,which(colnames(dataMouseCortex$rna_expr) %in% idx_c)],2,BICMaskginModel,Time = dataMouseCortex$rna_expr$Time,Sleep=Sleep,Wake=Wake)
+names(BIC_Cortex_Masking)<-colnames(dataMouseCortex$rna_expr)[which(colnames(dataMouseCortex$rna_expr) %in% idx_c)]
+
+# Liver
+BIC_Liver_Masking<-parApply(cl,dataMouseLiver$rna_expr[,which(colnames(dataMouseLiver$rna_expr) %in% idx_l)],2,BICMaskginModel,Time = dataMouseLiver$rna_expr$Time,Sleep=Sleep,Wake=Wake)
+names(BIC_Liver_Masking)<-colnames(dataMouseLiver$rna_expr)[which(colnames(dataMouseLiver$rna_expr) %in% idx_l)]
+
+# Human
+# Sleep-Wake amount
+SleepPHDesync<-aggregate(dataHuman$MeanSWdf$Sleep,list(ceiling(dataHuman$MeanSWdf$Time)),mean)
+WakePHDesync<-aggregate(dataHuman$MeanSWdf$Wake,list(ceiling(dataHuman$MeanSWdf$Time)),mean)
+SleepPHExt<-aggregate(dataHuman$MeanSWdfExt$Sleep,list(ceiling(dataHuman$MeanSWdfExt$Time)),mean)
+WakePHExt<-aggregate(dataHuman$MeanSWdfExt$Wake,list(ceiling(dataHuman$MeanSWdfExt$Time)),mean)
+SleepPHRest<-aggregate(dataHuman$MeanSWdfRest$Sleep,list(ceiling(dataHuman$MeanSWdfRest$Time)),mean)
+WakePHRest<-aggregate(dataHuman$MeanSWdfRest$Wake,list(ceiling(dataHuman$MeanSWdfRest$Time)),mean)
+
+Sleep<-c(SleepPHDesync[dataHuman$HT_Desync$Time,]$x,SleepPHExt[dataHuman$HT_Ext$Time,]$x,SleepPHRest[dataHuman$HT_Res$Time,]$x)
+Wake<-c(WakePHDesync[dataHuman$HT_Desync$Time,]$x,WakePHExt[dataHuman$HT_Ext$Time,]$x,WakePHRest[dataHuman$HT_Res$Time,]$x)
+ExprHuman<-rbind.data.frame(dataHuman$HT_Desync,dataHuman$HT_Ext,dataHuman$HT_Res)
+BIC_Human_Masking<-parApply(cl,ExprHuman[,which(colnames(ExprHuman) %in% idx_h)],2,BICMaskginModel,Time = ExprHuman$Time,
+                            Sleep = Sleep,Wake = Wake,
+                         Experiment = c(rep("Desync",nrow(dataHuman$HT_Desync)),rep("ExtRest",nrow(ExprHuman)-nrow(dataHuman$HT_Desync))))
+names(BIC_Human_Masking)<-colnames(ExprHuman)[which(colnames(ExprHuman) %in% idx_h)]
+
+stopCluster(cl)
+```
+
+## Results
+
+Boxplot 
+
+
+```{r}
+DSWmodel<-c(BIC_Cortex_DropSW[idx_c]-BIC_Cortex_full[idx_c],
+            BIC_Liver_DropSW[idx_l]-BIC_Liver_full[idx_l],
+            BIC_Human_DropSW[idx_h]-BIC_Human_full[idx_h])
+Dsinmodel<-c(BIC_Cortex_DropSin[idx_c]-BIC_Cortex_full[idx_c],
+             BIC_Liver_DropSin[idx_l]-BIC_Liver_full[idx_l],
+             BIC_Human_DropSin[idx_h]-BIC_Human_full[idx_h])
+Maskmodel<-c(BIC_Cortex_Masking[idx_c]-BIC_Cortex_full[idx_c],
+             BIC_Liver_Masking[idx_l]-BIC_Liver_full[idx_l],
+             BIC_Human_Masking[idx_h]-BIC_Human_full[idx_h])
+Anovamodel<-c(BIC_Cortex_ANOVA[idx_c]-BIC_Cortex_full[idx_c],
+              BIC_Liver_ANOVA[idx_l]-BIC_Liver_full[idx_l],
+              BIC_Human_ANOVA[idx_h]-BIC_Human_full[idx_h])
+Flatmodel<-c(BIC_Cortex_flat[idx_c]-BIC_Cortex_full[idx_c],
+             BIC_Liver_flat[idx_l]-BIC_Liver_full[idx_l],
+             BIC_Human_flat[idx_h]-BIC_Human_full[idx_h])
+
+
+datamodel<-cbind.data.frame(BIC_diff=c(DSWmodel,Dsinmodel,Maskmodel,Anovamodel,Flatmodel),
+                            model=c(rep("Circadian oscillator",length(DSWmodel)),
+                                    rep("Sleep-wake oscillator",length(Dsinmodel)),
+                                    rep("Circadian with masking",length(Maskmodel)),
+                                    rep("ANOVA",length(Anovamodel)),
+                                    rep("Flat",length(Flatmodel))),
+                            tissue = rep(c(rep("Cortex",length(idx_c)),rep("Liver",length(idx_l)),rep("Blood",length(idx_h))),5))
+
+
+library(scales)
+reverselog_trans <- function(base = exp(1)) {
+    trans <- function(x) -log(x, base)
+    inv <- function(x) base^(-x)
+    trans_new(paste0("reverselog-", format(base)), trans, inv, 
+              log_breaks(base = base), 
+              domain = c(1e-100, Inf))
+}
+
+library(ggallin)
+pseudoLog2 <- function(x) { asinh(x/2)/log2(2) }
+ggboxplot<-ggplot(aes(x=model,y=(BIC_diff),fill=model),data=datamodel)+geom_boxplot()+theme_classic()+geom_hline(yintercept=c(-2,0,2),linetype=c("dashed","solid","dashed"),color=c("grey75","red","grey75"))+ylab(expression(paste(Delta,BIC["1A"])))+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+xlab(NULL)+ scale_x_discrete(limits = c("ANOVA","Sleep-wake oscillator","Circadian oscillator","Circadian with masking"),labels = c("ANOVA" = "Independent\ntime-point effect","Sleep-wake oscillator" = "Sleep-wake\noscillator", "Circadian oscillator" = "Circadian\noscillator", "Circadian with masking" = "Circadian\nwith masking"))+
+  scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-10,-2,0,2,10,50,100))+
+  scale_fill_manual(values=c("ANOVA" = "red","Sleep-wake oscillator" = "cornflowerblue","Circadian oscillator" = "goldenrod","Circadian with masking" = "forestgreen"))+theme(legend.position = "none")
+
+ggboxplot
+```
+
+
+
+```{r}
+library(ggallin)
+pseudoLog2 <- function(x) { asinh(x/2)/log2(2) }
+ggboxplot_BIC<-ggplot(aes(x=model,y=(BIC_diff),fill=tissue),data=datamodel)+geom_boxplot()+theme_classic()+geom_hline(yintercept=c(-2,0,2),linetype=c("dashed","solid","dashed"),color=c("grey75","red","grey75"))+ylab(expression(paste(Delta,BIC)))+theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=.5))+xlab(NULL)+ scale_x_discrete(limits = c("ANOVA","Sleep-wake oscillator","Circadian oscillator","Circadian with masking"),labels = c("ANOVA" = "Independent\ntime-point effect","Sleep-wake oscillator" = "Sleep-wake\noscillator", "Circadian oscillator" = "Circadian\noscillator", "Circadian with masking" = "Circadian with\nsleep-wake masking"))+
+  scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-10,-2,0,2,10,50,100))+
+  scale_fill_manual(values=c("Blood" = colorCode[["Blood"]],"Cortex" = colorCode[["Cortex"]],"Liver" = colorCode[["Liver"]]))+theme(legend.position = "none",axis.text = element_text(size = 10),axis.title = element_text(size = 10))
+ggboxplot_BIC
+```
+
+
+
+
+# Compare Kendall Tau (KT)
+
+Here we compare the kendall tau value for a subset of genes within each datasets.
+
+
+## KT value of full, oscillator (Fc) and oscillator (Fsw)
+
+Get KT value of precomputed model of oscillators
+
+Full model:
+
+```{r}
+KT_Cortex_full<-dataMouseCortex$fits$KendallTau[dataMouseCortex$fits$Gene %in% idx_c]
+names(KT_Cortex_full)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$Gene %in% idx_c]
+
+KT_Liver_full<-dataMouseLiver$fits$KendallTau[dataMouseLiver$fits$Gene %in% idx_l]
+names(KT_Liver_full)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$Gene %in% idx_l]
+
+KT_Human_full<-dataHuman$fits$KendallTau[dataHuman$fits$ProbeName %in% idx_h]
+names(KT_Human_full)<-dataHuman$fits$ProbeName[dataHuman$fits$ProbeName %in% idx_h]
+```
+
+Oscillator only driven by Fc
+
+```{r}
+fitsCortexDropSW<-read.table(CORTEXFITS_DropSW,header=T)
+KT_Cortex_DropSW<-fitsCortexDropSW$KendallTau[fitsCortexDropSW$Gene %in% idx_c]
+names(KT_Cortex_DropSW)<-fitsCortexDropSW$Gene[fitsCortexDropSW$Gene %in% idx_c]
+
+fitsLiverDropSW<-read.table(LIVERFITS_DropSW,header=T)
+KT_Liver_DropSW<-fitsLiverDropSW$KendallTau[fitsLiverDropSW$Gene %in% idx_l]
+names(KT_Liver_DropSW)<-fitsLiverDropSW$Gene[fitsLiverDropSW$Gene %in% idx_l]
+
+fitsHumanDropSW<-read.table(HUMANFITS_DropSW,header=T)
+KT_Human_DropSW<-fitsHumanDropSW$KendallTau[fitsHumanDropSW$ProbeName %in% idx_h]
+names(KT_Human_DropSW)<-fitsHumanDropSW$ProbeName[fitsHumanDropSW$ProbeName %in% idx_h]
+```
+
+Oscillator only driven by Fsw
+
+```{r}
+fitsCortexDropSin<-read.table(CORTEXFITS_DropSin,header=T)
+KT_Cortex_DropSin<-fitsCortexDropSin$KendallTau[fitsCortexDropSin$Gene %in% idx_c]
+names(KT_Cortex_DropSin)<-fitsCortexDropSin$Gene[fitsCortexDropSin$Gene %in% idx_c]
+
+fitsLiverDropSin<-read.table(LIVERFITS_DropSin,header=T)
+KT_Liver_DropSin<-fitsLiverDropSin$KendallTau[fitsLiverDropSin$Gene %in% idx_l]
+names(KT_Liver_DropSin)<-fitsLiverDropSin$Gene[fitsLiverDropSin$Gene %in% idx_l]
+
+fitsHumanDropSin<-read.table(HUMANFITS_DropSin,header=T)
+KT_Human_DropSin<-fitsHumanDropSin$KendallTau[fitsHumanDropSin$ProbeName %in% idx_h]
+names(KT_Human_DropSin)<-fitsHumanDropSin$ProbeName[fitsHumanDropSin$ProbeName %in% idx_h]
+```
+
+
+## KT value of an ANOVA
+
+```{r}
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+KT_Cortex_ANOVA<-parApply(cl,dataMouseCortex$rna_expr[,which(colnames(dataMouseCortex$rna_expr) %in% idx_c)],2,KTANOVAModel,Time = as.factor(dataMouseCortex$rna_expr$Time))
+names(KT_Cortex_ANOVA)<-colnames(dataMouseCortex$rna_expr)[which(colnames(dataMouseCortex$rna_expr) %in% idx_c)]
+
+# Liver
+KT_Liver_ANOVA<-parApply(cl,dataMouseLiver$rna_expr[,which(colnames(dataMouseLiver$rna_expr) %in% idx_l)],2,KTANOVAModel,Time = as.factor(dataMouseLiver$rna_expr$Time))
+names(KT_Liver_ANOVA)<-colnames(dataMouseLiver$rna_expr)[which(colnames(dataMouseLiver$rna_expr) %in% idx_l)]
+
+# Human
+ExprHuman<-rbind.data.frame(dataHuman$HT_Desync,dataHuman$HT_Ext,dataHuman$HT_Res)
+KT_Human_ANOVA<-parApply(cl,ExprHuman[,which(colnames(ExprHuman) %in% idx_h)],2,KTANOVAModel,Time = as.factor(ExprHuman$Time),
+                         Experiment = c(rep("Desync",nrow(dataHuman$HT_Desync)),rep("ExtRest",nrow(ExprHuman)-nrow(dataHuman$HT_Desync))))
+names(KT_Human_ANOVA)<-colnames(ExprHuman)[which(colnames(ExprHuman) %in% idx_h)]
+
+stopCluster(cl)
+```
+
+## KT value of circadian with masking
+
+In this model, we have a sine-wave and sleep-wake distribution explaining expression
+
+```{r}
+
+cl <- makeCluster(NCORES)
+clusterExport(cl, varlist=c("dataMouseCortex","dataMouseLiver","dataHuman")) 
+
+# Cortex
+# Sleep-Wake amount
+SleepPH<-aggregate(dataMouseCortex$SWdf$Sleep,list(ceiling(dataMouseCortex$SWdf$Time)),mean)
+WakePH<-aggregate(dataMouseCortex$SWdf$Wake,list(ceiling(dataMouseCortex$SWdf$Time)),mean)
+Sleep<-SleepPH[dataMouseCortex$rna_expr$Time,]$x
+Wake<-WakePH[dataMouseCortex$rna_expr$Time,]$x
+KT_Cortex_Masking<-parApply(cl,dataMouseCortex$rna_expr[,which(colnames(dataMouseCortex$rna_expr) %in% idx_c)],2,KTMaskginModel,Time = dataMouseCortex$rna_expr$Time,Sleep=Sleep,Wake=Wake)
+names(KT_Cortex_Masking)<-colnames(dataMouseCortex$rna_expr)[which(colnames(dataMouseCortex$rna_expr) %in% idx_c)]
+
+# Liver
+KT_Liver_Masking<-parApply(cl,dataMouseLiver$rna_expr[,which(colnames(dataMouseLiver$rna_expr) %in% idx_l)],2,KTMaskginModel,Time = dataMouseLiver$rna_expr$Time,Sleep=Sleep,Wake=Wake)
+names(KT_Liver_Masking)<-colnames(dataMouseLiver$rna_expr)[which(colnames(dataMouseLiver$rna_expr) %in% idx_l)]
+
+# Human
+# Sleep-Wake amount
+SleepPHDesync<-aggregate(dataHuman$MeanSWdf$Sleep,list(ceiling(dataHuman$MeanSWdf$Time)),mean)
+WakePHDesync<-aggregate(dataHuman$MeanSWdf$Wake,list(ceiling(dataHuman$MeanSWdf$Time)),mean)
+SleepPHExt<-aggregate(dataHuman$MeanSWdfExt$Sleep,list(ceiling(dataHuman$MeanSWdfExt$Time)),mean)
+WakePHExt<-aggregate(dataHuman$MeanSWdfExt$Wake,list(ceiling(dataHuman$MeanSWdfExt$Time)),mean)
+SleepPHRest<-aggregate(dataHuman$MeanSWdfRest$Sleep,list(ceiling(dataHuman$MeanSWdfRest$Time)),mean)
+WakePHRest<-aggregate(dataHuman$MeanSWdfRest$Wake,list(ceiling(dataHuman$MeanSWdfRest$Time)),mean)
+
+Sleep<-c(SleepPHDesync[dataHuman$HT_Desync$Time,]$x,SleepPHExt[dataHuman$HT_Ext$Time,]$x,SleepPHRest[dataHuman$HT_Res$Time,]$x)
+Wake<-c(WakePHDesync[dataHuman$HT_Desync$Time,]$x,WakePHExt[dataHuman$HT_Ext$Time,]$x,WakePHRest[dataHuman$HT_Res$Time,]$x)
+ExprHuman<-rbind.data.frame(dataHuman$HT_Desync,dataHuman$HT_Ext,dataHuman$HT_Res)
+KT_Human_Masking<-parApply(cl,ExprHuman[,which(colnames(ExprHuman) %in% idx_h)],2,KTMaskginModel,Time = ExprHuman$Time,
+                            Sleep = Sleep,Wake = Wake,
+                         Experiment = c(rep("Desync",nrow(dataHuman$HT_Desync)),rep("ExtRest",nrow(ExprHuman)-nrow(dataHuman$HT_Desync))))
+names(KT_Human_Masking)<-colnames(ExprHuman)[which(colnames(ExprHuman) %in% idx_h)]
+
+stopCluster(cl)
+```
+
+## Results
+
+Boxplot 
+
+
+```{r}
+DSWmodel<-c(KT_Cortex_DropSW[idx_c]-KT_Cortex_full[idx_c],
+            KT_Liver_DropSW[idx_l]-KT_Liver_full[idx_l],
+            KT_Human_DropSW[idx_h]-KT_Human_full[idx_h])
+Dsinmodel<-c(KT_Cortex_DropSin[idx_c]-KT_Cortex_full[idx_c],
+             KT_Liver_DropSin[idx_l]-KT_Liver_full[idx_l],
+             KT_Human_DropSin[idx_h]-KT_Human_full[idx_h])
+Maskmodel<-c(KT_Cortex_Masking[idx_c]-KT_Cortex_full[idx_c],
+             KT_Liver_Masking[idx_l]-KT_Liver_full[idx_l],
+             KT_Human_Masking[idx_h]-KT_Human_full[idx_h])
+Anovamodel<-c(KT_Cortex_ANOVA[idx_c]-KT_Cortex_full[idx_c],
+              KT_Liver_ANOVA[idx_l]-KT_Liver_full[idx_l],
+              KT_Human_ANOVA[idx_h]-KT_Human_full[idx_h])
+
+
+datamodel<-cbind.data.frame(BIC_diff=c(DSWmodel,Dsinmodel,Maskmodel,Anovamodel),
+                            model=c(rep("Circadian oscillator",length(DSWmodel)),
+                                    rep("Sleep-wake oscillator",length(Dsinmodel)),
+                                    rep("Circadian with masking",length(Maskmodel)),
+                                    rep("ANOVA",length(Anovamodel))),
+                            tissue = rep(c(rep("Cortex",length(idx_c)),rep("Liver",length(idx_l)),rep("Blood",length(idx_h))),4))
+
+
+library(ggallin)
+
+ggboxplot<-ggplot(aes(x=model,y=(BIC_diff),fill=model),data=datamodel)+geom_boxplot()+theme_classic()+geom_hline(yintercept=c(0),linetype=c("solid"),color=c("red"))+ylab(expression(paste(Delta,kendall," ",tau["1A"])))+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+xlab(NULL)+ scale_x_discrete(limits = c("ANOVA","Sleep-wake oscillator","Circadian oscillator","Circadian with masking"),labels = c("ANOVA" = "Independent\ntime-point effect","Sleep-wake oscillator" = "Sleep-wake\noscillator", "Circadian oscillator" = "Circadian\noscillator", "Circadian with masking" = "Circadian\nwith masking"))+
+  scale_fill_manual(values=c("ANOVA" = "red","Sleep-wake oscillator" = "cornflowerblue","Circadian oscillator" = "goldenrod","Circadian with masking" = "forestgreen"))+theme(legend.position = "none")
+
+ggboxplot
+```
+
+
+
+```{r}
+library(ggallin)
+pseudoLog2 <- function(x) { asinh(x/2)/log2(2) }
+ggboxplot_KT<-ggplot(aes(x=model,y=(BIC_diff),fill=tissue),data=datamodel)+geom_boxplot()+theme_classic()+geom_hline(yintercept=c(0),linetype=c("solid"),color=c("red"))+ylab(expression(paste(Delta,kendall,"'s ",tau)))+theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5))+xlab(NULL)+ scale_x_discrete(limits = c("ANOVA","Sleep-wake oscillator","Circadian oscillator","Circadian with masking"),labels = c("ANOVA" = "Independent\ntime-point effect","Sleep-wake oscillator" = "Sleep-wake\noscillator", "Circadian oscillator" = "Circadian\noscillator", "Circadian with masking" = "Circadian with\nsleep-wake masking"))+
+  scale_fill_manual(values=c("Blood" = colorCode[["Blood"]],"Cortex" = colorCode[["Cortex"]],"Liver" = colorCode[["Liver"]]))+theme(legend.position = "none",axis.text = element_text(size = 10),axis.title = element_text(size = 10))
+ggboxplot_KT
+```
+
+
+```{r,fig.height= 6,fig.width=5 }
+ggboxplot_BIC<-ggboxplot_BIC+theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) 
+ggboxplot_BIC / ggboxplot_KT
+
+ggsave(paste(FIGUREDIR,"ModelCompare.pdf",sep=""), width = 150, height = 150, units = "mm",plot = ggboxplot_BIC / ggboxplot_KT)
+```
+
+# Rhythmic vs non-rhythmic
+
+
+```{r}
+DBL<-log(dataMouseLiver$fits$BF)*2 # BF is exp((BICflat-BIC)/2)
+idx<-order(DBL,decreasing = T)
+plot(DBL[idx],col="black",pch=19)
+abline(h=2)
+gg1<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL))))+geom_point(col=colorCode[["Liver"]])
+gg1<-gg1 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg1<-gg1+ylab(expression(paste(Delta,BIC[10])))+xlab("Total genes")
+gg1<-gg1+geom_hline(yintercept=2)+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+gg1
+
+Over2<-rep("Not. Rhythmic",length(DBL[idx]))
+Over2[DBL[idx]>2]<-"Rhythmic"
+gg1<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL)),Rhythmic=Over2))+geom_area(aes(fill=Rhythmic))#+geom_line(col=colorCode[["Liver"]])
+gg1<-gg1 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg1<-gg1+ylab(expression(paste(Delta,BIC[10])))+xlab("Total genes")+scale_fill_manual(values=c("Not. Rhythmic"="#A0B1BA","Rhythmic" = colorCode[["Liver"]]))+geom_hline(yintercept=c(2),linetype=c("dashed"),color=c("grey75"))+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+#gg1<-gg1+geom_hline(yintercept=2)
+gg1
+```
+
+```{r}
+DBL<-log(dataMouseCortex$fits$BF)*2
+idx<-order(DBL,decreasing = T)
+plot(DBL[idx],col=as.factor(DBL[idx]>2))
+
+gg2<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL))))+geom_point(col=colorCode[["Cortex"]])
+gg2<-gg2 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg2<-gg2+ylab(expression(paste(Delta,BIC[10])))+xlab("Total genes")
+gg2<-gg2+geom_hline(yintercept=2)+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+gg2
+
+Over2<-rep("Not. Rhythmic",length(DBL[idx]))
+Over2[DBL[idx]>2]<-"Rhythmic"
+gg2<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL)),Rhythmic=Over2))+geom_area(aes(fill=Rhythmic))#+geom_line(col=colorCode[["Cortex"]])
+gg2<-gg2 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg2<-gg2+ylab(expression(paste(Delta,BIC[10])))+xlab("Total genes")+scale_fill_manual(values=c("Not. Rhythmic"="#A0B1BA","Rhythmic" = colorCode[["Cortex"]]))+geom_hline(yintercept=c(2),linetype=c("dashed"),color=c("grey75"))+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+#gg1<-gg1+geom_hline(yintercept=2)
+gg2
+```
+
+
+```{r}
+DBL<-log(dataHuman$fits$BF)*2
+idx<-order(DBL,decreasing = T)
+plot(DBL[idx],col=as.factor(DBL[idx]< -2))
+
+gg3<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL))))+geom_point(col=colorCode[["Blood"]])
+gg3<-gg3 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg3<-gg3+ylab(expression(paste(Delta,BIC[10])))+xlab("Total probes")
+gg3<-gg3+geom_hline(yintercept=2)+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+gg3
+
+
+Over2<-rep("Not. Rhythmic",length(DBL[idx]))
+Over2[DBL[idx]>2]<-"Rhythmic"
+gg3<-ggplot(aes(y=DBIC,x=GeneNumber),data=cbind.data.frame(DBIC=DBL[idx],GeneNumber=seq(1,length(DBL)),Rhythmic=Over2))+geom_area(aes(fill=Rhythmic))#+geom_line(col=colorCode[["Blood"]])
+gg3<-gg3 + theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())
+gg3<-gg3+ylab(expression(paste(Delta,BIC[10])))+xlab("Total genes")+scale_fill_manual(values=c("Not. Rhythmic"="#A0B1BA","Rhythmic" = colorCode[["Blood"]]))+geom_hline(yintercept=c(2),linetype=c("dashed"),color=c("grey75"))+scale_y_continuous(trans=pseudolog10_trans,breaks=c(-100,-50,-20,-10,-2,0,2,10,20,50,100))
+#gg1<-gg1+geom_hline(yintercept=2)
+gg3
+```
+
+
+```{r}
+gg1/gg2/gg3
+```
+
+
+# Kendall tau rhythmic
+
+```{r}
+KTCortex<-dataMouseCortex$fits$KendallTau[dataMouseCortex$fits$BF > exp(1)]
+KTLiver<-dataMouseLiver$fits$KendallTau[dataMouseLiver$fits$BF > exp(1)]
+KTBlood<-dataHuman$fits$KendallTau[dataHuman$fits$BF > exp(1)]
+
+
+ggKTC<-ggplot(aes(y=KendallTau,x=Tissue),data=cbind.data.frame(KendallTau=KTCortex,Tissue=rep("Cortex",length(KTCortex))))+geom_boxplot(fill=colorCode[["Cortex"]])+ylim(0,1)
+ggKTC<-ggKTC+ theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())+ylab(expression(paste(kendall,"'s ",tau)))
+
+ggKTL<-ggplot(aes(y=KendallTau,x=Tissue),data=cbind.data.frame(KendallTau=KTLiver,Tissue=rep("Liver",length(KTLiver))))+geom_boxplot(fill=colorCode[["Liver"]])+ylim(0,1)
+ggKTL<-ggKTL+ theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())+ylab(expression(paste(kendall,"'s ",tau)))
+
+ggKTB<-ggplot(aes(y=KendallTau,x=Tissue),data=cbind.data.frame(KendallTau=KTBlood,Tissue=rep("Blood",length(KTBlood))))+geom_boxplot(fill=colorCode[["Blood"]])+ylim(0,1)
+ggKTB<-ggKTB+ theme(panel.background=element_rect(fill = 'white', colour = 'black'),panel.grid.major=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.minor.x=element_blank())+ylab(expression(paste(kendall,"'s ",tau)))
+```
+
+
+```{r}
+layout <- '
+AB
+CD
+EG
+'
+gff<-wrap_plots(A = gg1, B = ggKTL, C = gg2, D=ggKTC ,E =gg3 ,G=ggKTB, design = layout,widths = c(1,0.5))
+gff
+
+ggsave(paste(FIGUREDIR,"RhythmicGenes.pdf",sep=""), width = 150, height = 150, units = "mm",plot = gff)
+```
+

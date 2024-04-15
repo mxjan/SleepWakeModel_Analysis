@@ -1,0 +1,173 @@
+---
+title: "Delta power fit"
+author: "Maxime Jan"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+Fit delta power using DDHO model:
+
+```{r}
+library(ggplot2)
+library(SWDMr)
+library(openxlsx)
+library(optimx)
+source("../FileLocation.R")
+source(COLORFUN)
+library(dplyr)
+cols<-ColorCode()
+```
+
+get delta power (given by P.Franken)
+
+```{r}
+delta<-read.xlsx("../../Data/C57BL6J_Cortex_TimeCourse_CHN2019/delta.xlsx",sheet=1,colNames = F)
+colnames(delta)<-c("Time","Delta.power","SE")
+delta$Time<-delta$Time+24
+```
+
+Get average sleep-wake in B6
+
+```{r}
+load(CORTEX_SWDMRDATA_RDATA)
+```
+
+
+We consider REM and Wake for increasing delta power ("Sleep")
+
+NREM decrease delta power ("Wake")
+
+```{r}
+SWdf$Wake<-SWdf$REM+SWdf$Wake
+SWdf$Sleep<-SWdf$NREM
+```
+
+
+```{r}
+DeltaSD<-delta[delta$Time %in% c(51,54),]
+delta<-rbind.data.frame(delta,DeltaSD,DeltaSD,DeltaSD)
+delta$log2.Delta.power<-log2(delta$Delta.power)
+```
+
+
+Create DDHO model
+
+```{r}
+swdmr <- SWDMr(SWdist=SWdf, Gexp=delta)
+model<-initDDHOmodel(swdmr,VarExp = "log2.Delta.power")
+
+model<-FixIntercept(model,log2(100))# Equilibrium position is set at 100% of delta power (delta power by the end of the light phase)
+
+model<-AddForce(model,"Wake")
+model<-AddForce(model,"Sleep")
+
+model<-SetYinitMode(model,mode = "Intercept_0")
+
+model<-ReplicateDrivingForce(model,c(0,24.0),10) # Replicate baseline for a few days to reach stability
+
+model<-SetParametersModel(model)
+
+model
+```
+ 
+optimize
+
+```{r}
+objfun<-SWDMrGetEvalFun(model)
+params<-c(omega=2*pi/24,loggamma=-1,Wake=1,Sleep=-1,intercept =log2(100))
+fits<-optimx(params,fn = objfun,method=c("nlminb"),
+             lower=c(omega=0,loggamma=-100,Wake=0,Sleep=-1e4,intercept =log2(80)),
+             upper=c(omega=4,loggamma=100,Wake=1e4,Sleep=0,intercept =log2(120)))
+fits
+```
+
+plot
+
+```{r}
+out<-SWDMrFit(model,fits)
+# plot fitted lines
+gg<-ggplot(aes(x=time,y=fit),data=cbind.data.frame(time=out$time,fit=2^out$y1))
+
+rectgrey<-"grey80"
+for (i in c(1,2,3,4)){
+  gg<-gg+annotate("rect",xmin=c((c(1,2,3,4)-1) * 24 + 12),xmax=c((c(1,2,3,4)) * 24),ymin=-Inf,ymax=Inf,fill=rectgrey)
+}
+gg<-gg + annotate("rect",xmin=48,xmax=54,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25)) # SD block
+
+
+SW<-model@SWdist
+SW[which.min(abs(SW$Time)),"Time"]<-0 # Be sure it is 0, and not 0.0000001 -> ceiling will make it 1 instead of 0
+SW<-SW %>% group_by(ceiling(Time)) %>% mutate_at("Wake",mean)
+SW<-SW %>% group_by(ceiling(Time)) %>% mutate_at("Sleep",mean)
+SW$Wake<-SW$Wake*200
+#SW$Wake<-SW$Wake/.1 * (0.6 - 0.01) + 0.01
+dd<-cbind.data.frame(Time=SW$Time,y1=SW$Wake,Day_axis=floor(SW$Time/24)+1)
+dd<-dd[dd$Day_axis %in% c(1,2,3,4),]
+
+# 
+# 
+for (i in c(1,2,3,4)){
+  gg<-gg +
+    annotate("ribbon",x=dd$Time[dd$Day_axis==i],ymax=dd$y1[dd$Day_axis==i],ymin=-Inf,
+             fill=alpha(cols[["SWforce"]],.2))+
+    annotate("line",x=dd$Time[dd$Day_axis==i],y=dd$y1[dd$Day_axis==i],color=alpha(cols[["SWforce"]],.7))
+}
+
+
+
+gg<-gg+geom_line(size=1)
+# Add expression points
+gg <- gg + 
+  annotate("segment",x=delta$Time,y=delta$Delta.power-1.96*delta$SE,xend=delta$Time,yend=delta$Delta.power+1.96*delta$SE,size=1.5,lineend="round")+
+  annotate("point",x=delta$Time,y=delta$Delta.power,size=3,shape=21,color="white",fill="black")
+gg<-gg +scale_x_continuous(breaks=seq(12,96,by=12),limits = c(12,96))+ theme_bw() + ggtitle("Delta power")
+gg
+```
+
+
+Compute process-S
+
+```{r}
+# Translate sleep/wake proportion to h/6min
+swdmr@SWdist$NREM<-swdmr@SWdist$NREM/10
+swdmr@SWdist$Wake<-swdmr@SWdist$Wake/10
+swdmr@SWdist$REM<-swdmr@SWdist$REM/10
+swdmr@SWdist$Sleep<-swdmr@SWdist$Sleep/10
+modelS<-initProcessSmodel(swdmr,VarExp = "Delta.power")
+modelS<-ReplicateDrivingForce(modelS,c(0,24.0),10)
+modelS<-SetYinitMode(modelS,"Fixed",100)
+modelS<-SetFittingValue(modelS,value = "RSS")
+modelS
+```
+
+```{r,fig.width=5,fig.height=3}
+FrankenParameters<-c(AsympWake=282,AsympSleep=55,TauWake=7.9,TauSleep=1.9)
+
+outS<-SWDMrFit(modelS,FrankenParameters)
+gg<-gg + annotate("path",x=outS$time,y=outS$y1,col="steelblue",size=1,linetype="solid",alpha=.75)
+
+gg<-gg+theme_classic()+ggtitle("Delta power fit")+ylab("% of baseline delta power [T32-T36]")+xlab("Time [h]")
+gg
+
+ggsave(gg,file="../Figures/DeltaPowerFit.pdf",height = 3,width = 6)
+```
+
+
+
+

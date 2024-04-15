@@ -1,0 +1,280 @@
+---
+title: "RAW process"
+author: "Maxime Jan"
+date: '01.10.2019'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+
+# LIBRARY
+
+```{r}
+library(GEOquery)
+library(limma)
+library(arrayQualityMetrics)
+library(umap)
+library(RColorBrewer)
+source("../FileLocation.R")
+```
+
+# GET DATA
+
+Recover data from GEO
+
+## GSE39445
+
+From : Extended and Restricted sleep
+
+```{r}
+# ## UNCOMMENT IF FILES ARE NOT PRESENT ####
+# # GET DATA
+# AgilFiles_RestExtSleep = getGEOSuppFiles("GSE39445",baseDir = HUMANCR_MICROARRAY)
+# # UNTAR
+# untar(rownames(AgilFiles_RestExtSleep),exdir = HUMANCR_MICROARRAY_CELL)
+# # Download Matrix data with metadata
+# getGEO('GSE39445',GSEMatrix=TRUE,destdir = HUMANCR_MICROARRAY_SOFT)
+```
+
+File list
+
+```{r}
+GSMFs_ReExS<-list.files(HUMANCR_MICROARRAY_CELL,pattern = '*.txt.gz')
+GSMFs_ReExS_small<-unlist(lapply(strsplit(GSMFs_ReExS,"_"),function(x) return(x[[1]])))
+GSMFs_ReExS_PATH<-paste(HUMANCR_MICROARRAY_CELL,GSMFs_ReExS,sep="")
+
+GSE39445 <- getGEO(filename = paste(HUMANCR_MICROARRAY_SOFT,"/GSE39445_series_matrix.txt.gz",sep=""))
+```
+
+```{r}
+GSE39445_metaD<-pData(GSE39445)
+# Keep only relevant data
+GSE39445_metaD<-GSE39445_metaD[,c(39,42,43,44,45,40)]
+colnames(GSE39445_metaD)[which(colnames(GSE39445_metaD) == "genotype/variation:ch1")]<-"genotypePER3"
+# Reorder
+GSE39445_metaD<-GSE39445_metaD[GSMFs_ReExS_small,]
+# Remove NA (one unknown subject)
+NASamples<-rownames(GSE39445_metaD[is.na(GSE39445_metaD$`subject:ch1`),])
+GSE39445_metaD<-GSE39445_metaD[-which(rownames(GSE39445_metaD) %in% NASamples),]
+idxr<-which(GSMFs_ReExS_small %in% NASamples)
+GSMFs_ReExS_small<-GSMFs_ReExS_small[-idxr]
+GSMFs_ReExS<-GSMFs_ReExS[-idxr]
+GSMFs_ReExS_PATH<-GSMFs_ReExS_PATH[-idxr]
+```
+
+
+## GSE48113
+
+From : Desynchrony protocol
+
+```{r}
+# ## UNCOMMENT IF FILES ARE NOT PRESENT ####
+# # GET DATA
+# AgilFiles_DesyncSleep = getGEOSuppFiles("GSE48113",baseDir = HUMANFD_MICROARRAY)
+# # UNTAR
+# untar(rownames(AgilFiles_DesyncSleep),exdir = HUMANFD_MICROARRAY_CELL)
+# getGEO('GSE48113',GSEMatrix=TRUE,destdir = HUMANFD_MICROARRAY_SOFT)
+```
+
+File list
+
+```{r}
+GSMFs_DesyncS<-list.files(HUMANFD_MICROARRAY_CELL,pattern = '*.txt.gz')
+GSMFs_DesyncS_small<-unlist(lapply(strsplit(GSMFs_DesyncS,"_"),function(x) return(x[[1]])))
+GSMFs_DesyncS_PATH<-paste(HUMANFD_MICROARRAY_CELL,GSMFs_DesyncS,sep="")
+
+GSE48113 <- getGEO(filename = paste(HUMANFD_MICROARRAY_SOFT,"/GSE48113_series_matrix.txt.gz",sep=""))
+```
+
+```{r}
+GSE48113_metaD<-pData(GSE48113)
+# Keep only relevant data
+GSE48113_metaD<-GSE48113_metaD[,c(38,40,41,42,43,39)]
+colnames(GSE48113_metaD)[which(colnames(GSE48113_metaD) == "per3 genotype:ch1")]<-"genotypePER3"
+# Reorder
+GSE48113_metaD<-GSE48113_metaD[GSMFs_DesyncS_small,]
+```
+
+
+
+# PROCESS
+
+Get full list
+
+```{r}
+GSMFs<-c(GSMFs_ReExS,GSMFs_DesyncS)
+GSMFs_small<-c(GSMFs_ReExS_small,GSMFs_DesyncS_small)
+GSMFs_PATH<-c(GSMFs_ReExS_PATH,GSMFs_DesyncS_PATH)
+```
+
+
+Read
+
+
+```{r}
+AllDS <- read.maimages(GSMFs_PATH, source="agilent", green.only=T,
+                       other.columns=c("gIsWellAboveBG","gIsSaturated","gIsFeatPopnOL","gIsFeatNonUnifOL"))
+```
+
+Background correction
+
+```{r}
+#bg_data<-backgroundCorrect(AllDS,method = "normexp",normexp.method="mle",offset = 50)
+bg_data<-backgroundCorrect(AllDS,offset = 50)
+```
+
+Normalize
+
+```{r}
+#nm_data<-normalizeBetweenArrays(bg_data,method = "cyclicloess")
+nm_data<-normalizeBetweenArrays(bg_data,method = "quantile")
+nm_data_avg<-avereps(nm_data,ID=nm_data$genes$ProbeName)
+```
+
+
+Filtering
+
+```{r}
+Control <- nm_data_avg$genes$ControlType==1L
+NoSymbol <- is.na(nm_data_avg$genes$GeneName)
+IsExpr <- rowSums(nm_data_avg$other$gIsWellAboveBG > 0) >= 5
+nm_data_avg_filt <- nm_data_avg[!Control & !NoSymbol & IsExpr, ]
+dim(nm_data_avg)
+dim(nm_data_avg_filt)
+```
+
+
+```{r, pca_unfilt,fig.width=5,fig.height=5}
+# none sample should be orange
+cols<-rep("orange",ncol(nm_data_avg_filt))
+# Sample 
+cols[which(GSMFs_small %in% rownames(GSE48113_metaD))]<-"grey"
+cols[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == 1,]))]<-"black"
+cols[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction" ,]))]<-"red"
+cols[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,]))]<-"blue"
+
+
+pchs<-rep(19,ncol(nm_data_avg_filt))
+pchs[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == 1 & GSE48113_metaD$`time point:ch1` == 1,]))]<-17
+pchs[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`hoursawake:ch1` <= 13 & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction" ,]))]<-17
+pchs[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`hoursawake:ch1` <= 13 & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,]))]<-17
+
+pc<-prcomp(t(na.omit(nm_data_avg_filt$E)))
+plot(pc$x[,1],pc$x[,2],col=cols,pch=pchs,xlab="PC1",ylab="PC2")
+```
+
+Remove some large outliers (also detected using arrayQualityMetrics)
+
+```{r}
+SampOut<-GSMFs_small[c(460,467,661)]
+colnames(nm_data_avg_filt)<-GSMFs_small
+nm_data_avg_filt<-nm_data_avg_filt[,-which(colnames(nm_data_avg_filt) %in% SampOut )]
+
+GSE48113_metaD<-GSE48113_metaD[-which(rownames(GSE48113_metaD) %in% SampOut ),]
+GSMFs_small<-GSMFs_small[-which(GSMFs_small %in% SampOut)]
+```
+
+
+
+```{r, pca_filt,fig.width=5,fig.height=5}
+# none sample should be orange
+cols<-rep("orange",ncol(nm_data_avg_filt))
+# Sample 
+cols[which(GSMFs_small %in% rownames(GSE48113_metaD))]<-"grey"
+cols[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == 1,]))]<-"black"
+cols[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction" ,]))]<-"red"
+cols[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,]))]<-"blue"
+
+
+pchs<-rep(19,ncol(nm_data_avg_filt))
+pchs[which(GSMFs_small %in% rownames(GSE48113_metaD[GSE48113_metaD$`day sample was taken in protocol:ch1` == "1" & GSE48113_metaD$`time point:ch1` %in% c("1","2"),]))]<-17
+pchs[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`hoursawake:ch1` %in% c("10.5","13.5","16.5") & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Restriction" ,]))]<-17
+pchs[which(GSMFs_small %in% rownames(GSE39445_metaD[GSE39445_metaD$`hoursawake:ch1` %in% c("10.5","13","16.5") & GSE39445_metaD$`sleepprotocol:ch1` == "Sleep Extension" ,]))]<-17
+
+#cols[pchs == 17]<-"orange"
+pc<-prcomp(t(na.omit(nm_data_avg_filt$E)))
+plot(pc$x[,1],pc$x[,2],col=cols,pch=pchs,xlab="PC1",ylab="PC2")
+```
+
+```{r,umap, fig.width=5,fig.height=8}
+custom.config = umap.defaults
+custom.config$n_neighbors<-25
+# custom.config$metric<-"cosine"
+custom.config$min_dist<-0.2
+
+Subjs<-c(GSE48113_metaD$`subject:ch1`,GSE39445_metaD$`subject:ch1`)
+names(Subjs)<-c(rownames(GSE48113_metaD),rownames(GSE39445_metaD))
+Subjs<-Subjs[GSMFs_small]
+
+um<-umap(t(na.omit(nm_data_avg_filt$E)),custom.config)
+set.seed(1)
+color = sample(grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)])
+par(mfrow=c(2,1))
+plot(um$layout[,1],um$layout[,2],pch=pchs,col=color[as.factor(Subjs)],xlab="UMAP 1",ylab="UMAP 2",main="Color by Subjects")
+plot(um$layout[,1],um$layout[,2],pch=pchs,col=cols,xlab="UMAP 1",ylab="UMAP 2",main="Color by Experiments")
+```
+
+
+QC
+
+```{r}
+eSet<-new("ExpressionSet", exprs = nm_data_avg_filt$E,annotation=nm_data_avg_filt$genes$GeneName)
+QC_report_nor<-arrayQualityMetrics(eSet,force=TRUE,outdir = paste(HUMANPROCESSEDDIR,"/QC_HumanTranscriptome",sep=""))
+```
+
+
+```{r, densityPlot}
+plotDensities(nm_data_avg_filt$E,legend=F)
+```
+
+
+# CORRECT ERROR GSM1168735
+
+Looking at metadata, GSM1168735 might be wrongly annotated
+
+```{r}
+GSE48113_metaD[142:154,]
+```
+
+
+"Time points: ch1" number 7 taken IN PHASE is missing and 2 points OUT OF PHASE are annotated.
+
+"day sample was taken in protocol:ch1" for GSM1168735 indicates that it is taken IN PHASE (1). 
+
+Change data for this point
+
+```{r}
+GSE48113_metaD["GSM1168735","sleep timing:ch1"]<-"In phase with respect to melatonin"
+```
+
+
+
+```{r}
+save(file=HUMANTRANSCRIPTOME_RDATA,nm_data_avg_filt,GSE48113_metaD,GSE39445_metaD)
+```
+
+
+
+# SESSION INFORMATION
+
+```{r}
+sessionInfo()
+```
+
+

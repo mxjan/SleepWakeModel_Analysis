@@ -1,0 +1,72 @@
+---
+title: "File Preparation for Fitting"
+author: "Maxime Jan"
+date: '03.04.2020'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+# LIBS
+
+```{r}
+library(SWDMr)
+source("../FileLocation.R")
+```
+
+```{r}
+# Data
+
+# ****** Prepare Sleep-Wake data ****** 
+files <- list.files(path=MOUSESLEEPWAKE_DIR,pattern = paste("^","BL6",sep=""),full.names = T)
+
+Mres<-matrix(ncol=length(files),nrow=86400)
+colnames(Mres)<-files
+
+for (f in files){
+  x<-read.table(f,stringsAsFactors = F)
+  Mres[,f]<-x$V1
+}
+SWdf<-Read_SW(Mres,concattimesec = 360,ResultBy = "proportion") # 300 = 5min, 180 = 3 min, 360 = 6min
+SWdf<-SWdf_AddLD(SWdf) # Add Light and Dark
+SWdf<-SWdf_DayMerging(SWdf,Daysformat=list(c(1,2),c(1,2),3,4,c(1,2),c(1,2),c(1,2),c(1,2),c(1,2),c(1,2),c(1,2)),concattimesec=360)
+SWdf<-SWdf_AddSD(SWdf,c(48,54))
+head(SWdf)
+
+load(LIVER_NORMEXPR_RDATA)
+
+# Meta data
+load(LIVER_METADATA_RDATA)
+
+rna_expr<-t(rna_expr)
+
+rna_expr<-as.data.frame(rna_expr)
+# Add time factor
+rna_expr$Time<-rna_meta$Time+24
+head(rna_expr[,c("Arntl","Dbp","Time")])
+```
+
+```{r}
+save(rna_expr,rna_meta,SWdf,file=LIVER_SWDMRDATA_RDATA)
+```
+
+
+
+```{r}
+sessionInfo()
+```
+

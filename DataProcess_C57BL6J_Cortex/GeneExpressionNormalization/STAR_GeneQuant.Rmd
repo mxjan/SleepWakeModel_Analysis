@@ -1,0 +1,275 @@
+---
+title: "Gene Quantification with STAR"
+author: "Maxime Jan"
+date: '06.03.2019'
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+# Libs
+
+```{r}
+library(biomaRt)
+library(edgeR)
+source("../../FileLocation.R")
+source(COLORFUN)
+library(RColorBrewer)
+```
+
+# Functions
+
+```{r}
+# Plot MDS and PCA
+plotDimRed<-function(exprd,meta){
+  
+  color<-GetCol()
+  pchs<-rep(19,nrow(meta))
+  pchs[meta$SD_NSD == "SD"]<-17
+  
+  par(mfrow=c(2,2))
+  plotMDS(exprd,col=color[as.factor(meta$time)],pch=pchs,main="Color by Time")
+  plotMDS(exprd,col=color[as.factor(meta$ZT)],pch=pchs,main="Color by ZT")
+  plotMDS(exprd,col=color[as.factor(meta$Batch)],pch=pchs,main="Color by Batch")
+  plotMDS(exprd,col=color[BATCHAlign],pch=pchs,main="Color by uniquely mapped %")
+  
+  par(mfrow=c(2,2))
+  pc<-prcomp(t(exprd),center=T,scale=T)
+  
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$time)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by Time")
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$ZT)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by ZT")
+  plot(pc$x[,1],pc$x[,2],col=color[as.factor(meta$Batch)],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by Batch")
+  plot(pc$x[,1],pc$x[,2],col=color[BATCHAlign],cex=1,pch=pchs,xlab="PC1",ylab="PC2",main="Color by uniquely mapped % ")
+  
+  plot(meta$time,pc$x[,1],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC1",main="Color by Time",xlim=c(0,84))
+  plot(meta$time,pc$x[,2],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC2",main="Color by Time",xlim=c(0,84))
+  plot(meta$time,pc$x[,3],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC3",main="Color by Time",xlim=c(0,84))
+  plot(meta$time,pc$x[,4],col=as.factor(meta$ZT),cex=1,pch=pchs,xlab="Time",ylab="PC4",main="Color by Time",xlim=c(0,84))
+}
+```
+
+
+# Meta Data
+
+Get meta data
+
+```{r}
+meta<-read.table(CORTEXMETADATA,header=T)
+rownames(meta)<-meta$OrigSampID
+
+# Remove samples not in RNA-seq
+meta<-meta[-which(meta$OrigSampID %in% c("ZT0CR","ZT0E2","T42S4")),] 
+colnames(meta)[5]<-"sample"
+meta
+```
+
+# Get counts
+
+Get Gene count matrix,
+
+we only counts the reads mapping the reverse strand (Illumina TruSeq stranded library preparation)
+
+```{r}
+CountsDIR<-CORTEXREADCOUNTSDIR
+
+i<-"T3N2"
+x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''),stringsAsFactors = F)
+x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+
+GeneCounts<-matrix(nrow=nrow(x),ncol=nrow(meta))
+rownames(GeneCounts)<-x$V1
+colnames(GeneCounts)<-rownames(meta)
+
+for (i in rownames(meta)){
+  x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''))
+  x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+  
+  GeneCounts[,i]<-x$V4 # Take 'reverse' counts
+  
+}
+```
+
+```{r,fig.height=6,fig.width=4}
+color<-GetCol()
+pctUm<-rep(NA,nrow(meta))
+names(pctUm)<-rownames(meta)
+
+LOGDIR<-paste(CountsDIR,"/Log/",sep="")
+for (i in rownames(meta)){
+  x<-read.table(paste(LOGDIR,i,"Log.final.out",sep=''),sep="\t",fill = T,stringsAsFactors = F)
+
+  pctUm[i]<-as.numeric(gsub(pattern = "%","",x[9,2])) #9
+}
+
+pctDif<-pctUm-mean(pctUm)
+meta$pctDif<-pctDif
+
+BATCHAlign<-as.factor(pctDif>3 | pctDif < -3)
+par(mfrow=c(3,1))
+plot(pctDif,col=color[BATCHAlign],pch=19,ylab="Alignment Score",xlab="Samples",main=paste("Mean uniquely mapped:",round(mean(pctUm)),"%"),ylim=c(-2,2))
+plot(meta$time,pctDif,col=color[BATCHAlign],pch=19,ylab="Alignment Score",xlab="Time",main=paste("Mean uniquely mapped:",round(mean(pctUm)),"%"),xlim=c(0,84),ylim=c(-2,2))
+qqnorm(pctDif,col=color[BATCHAlign],pch=19,ylim=c(-2,2))
+qqline(pctDif)
+```
+
+
+
+# Filter low counts
+
+```{r}
+dim(GeneCounts)
+GeneCountsFilt<-GeneCounts[apply(GeneCounts,1,mean)>=10,]
+dim(GeneCountsFilt)
+```
+
+# Normalization with edgeR
+
+counts are normalized and transformed into log2 + 1
+
+```{r}
+edgeobj <- DGEList(counts=GeneCountsFilt)
+edgeobj <- calcNormFactors(edgeobj,method="TMM")
+design <- model.matrix(~0+meta$time)
+#edgeobj<-estimateDisp(edgeobj,design)
+cpmv<-cpm(edgeobj,normalized.lib.sizes=TRUE,log=T,prior.count = 1)
+```
+
+# PCA cpm
+
+```{r ,fig.height=6,fig.width=6 }
+plotDimRed(cpmv,meta)
+```
+
+
+# Annotation using biomaRt
+
+```{r}
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+                         dataset = "mmusculus_gene_ensembl",host = "Oct2018.archive.ensembl.org")
+
+ttg <- biomaRt::getBM(
+  attributes = c("ensembl_gene_id","mgi_symbol"),
+  filters = "ensembl_gene_id",
+  values = rownames(cpmv),
+  mart = mart)
+dim(ttg)
+```
+
+```{r}
+cpmvFilt<-cpmv[rownames(cpmv) %in% ttg$ensembl_gene_id,]
+```
+
+
+# Examples gene expression
+
+Arntl
+
+```{r Arntl}
+ID<-ttg[ttg$mgi_symbol == "Arntl","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+Acot11
+
+```{r Acot11}
+ID<-ttg[ttg$mgi_symbol == "Acot11","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+Plin4
+
+```{r Plin4}
+ID<-ttg[ttg$mgi_symbol == "Plin4","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+Dbp
+
+```{r Dbp}
+ID<-ttg[ttg$mgi_symbol == "Dbp","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+```{r}
+ID<-ttg[ttg$mgi_symbol == "Hif3a","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+
+```{r}
+ID<-ttg[ttg$mgi_symbol == "Calm2","ensembl_gene_id"]
+plot(meta$time[meta$time<100],as.numeric(cpmv[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+# Try batch effect correction
+
+```{r}
+library(sva)
+metaBatchCorr<-meta
+metaBatchCorr$time[metaBatchCorr$time == 24]<-0
+metaBatchCorr$time<-as.factor(metaBatchCorr$time)
+metaBatchCorr$Batch<-as.factor(metaBatchCorr$Batch)
+```
+
+
+```{r, fig.width=6,fig.height=6}
+modcombat<-model.matrix(~time, data=metaBatchCorr)
+combat_edata = ComBat(dat=cpmvFilt, batch=metaBatchCorr$Batch, mod=modcombat, par.prior=T, prior.plots=T)
+plotDimRed(combat_edata,meta)
+```
+
+
+```{r, fig.width=6,fig.height=6}
+cpmvBC<-removeBatchEffect(cpmvFilt,batch=metaBatchCorr$Batch,design = model.matrix(~metaBatchCorr$time))
+plotDimRed(cpmvBC,meta)
+```
+
+
+
+```{r,fig.width=6 ,fig.height=8}
+ID<-ttg[ttg$mgi_symbol == "Arntl","ensembl_gene_id"]
+par(mfrow=c(2,1))
+plot(meta$time[meta$time<100],as.numeric(cpmvBC[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+plot(meta$time[meta$time<100],as.numeric(cpmvFilt[ID,meta$time<100]),col=meta$Batch[meta$time<100])
+```
+
+# write results
+
+```{r}
+# Save metadata as Rdata
+rna_meta<-meta
+rna_meta$SampleID<-as.character(rna_meta$SampleID)
+rna_meta$ZT<-as.numeric(gsub("ZT","",as.character(rna_meta$ZT)))
+rna_meta$Batch<-as.numeric(rna_meta$Batch)
+rna_meta$time<-as.numeric(rna_meta$time)
+rna_meta
+save(rna_meta,file=CORTEX_METADATA_RDATA)
+
+# Save Expression as with mgi symbol
+rownames(ttg)<-ttg$ensembl_gene_id
+rownames(cpmvBC)<-ttg[rownames(cpmvBC),"mgi_symbol"]
+# Rename for convenience
+rna_expr<-cpmvBC
+# Save
+save(rna_expr,file=CORTEX_NORMEXPR_RDATA)
+```
+
+
+```{r}
+sessionInfo()
+```
+

@@ -1,0 +1,868 @@
+---
+title: "SWrc Datasets"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+# LIBS
+
+```{r}
+library(patchwork)
+library(reshape2)
+library(ggplot2)
+library("ggvenn")
+library(SWDMr)
+library(doSNOW)
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(RASTERPLOT_FUN)
+library(parallel)
+library(ggrepel)
+library(scattermore)
+colorCode<-ColorCode()
+NCORES<-5
+source(TOPGO_FUN)
+```
+
+# SWrc
+
+## Cortex
+
+load dataset
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+```
+
+Get SWrc Cortex
+
+```{r}
+SWrc_Cortex<-dataMouseCortex$fits$SWrc[dataMouseCortex$fits$BF > exp(1)]
+names(SWrc_Cortex)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF > exp(1)]
+
+Zeta_Cortex<-dataMouseCortex$fits$zeta[dataMouseCortex$fits$BF > exp(1)]
+names(Zeta_Cortex)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF > exp(1)]
+```
+
+Plot
+
+
+```{r}
+PlotDensitySWrcZeta<-function(data,Tissue){
+  ColorPalette <- colorRampPalette(colors = c("white", colorCode[[Tissue]]))(11)
+  pp<-ggplot(data, aes(x=SWrc, y=Zeta))+
+    ylab(expression(paste(log10," ",zeta)))+xlab("")+theme(axis.text.x = element_text(angle = 45,hjust=1,size=8))+
+    geom_density_2d_filled(colour="black",alpha=1,
+                           contour_var = "ndensity",breaks=seq(.1,1,by=.1),adjust=2)+
+    coord_cartesian(xlim=c(0,1),ylim=c(-2.2,2))+
+    scale_fill_manual(values=ColorPalette)+
+    theme(panel.background = element_blank(),panel.border = element_rect(fill=NA))+
+    geom_scattermore(color=colorCode[[Tissue]],pointsize = 1.5)+
+    geom_hline(yintercept = 0)
+  return(pp)
+}
+```
+
+
+
+```{r,fig.height=4,fig.width=4}
+data<-as.data.frame(cbind(SWrc=SWrc_Cortex,Zeta=log10(Zeta_Cortex)))
+pC<-PlotDensitySWrcZeta(data,Tissue = "Cortex")
+
+p2C<-ggplot(data, aes(x=SWrc) )+geom_density(fill=colorCode[["Cortex"]],alpha=.5)+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+xlim(0,1)+theme(plot.margin = margin(0,0,0,0))+ggtitle("Cortex")+scale_x_continuous(position="top")
+
+p3C<-ggplot(data, aes(y=Zeta) )+geom_density(fill=colorCode[["Cortex"]],alpha=.5,orientation="y")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+theme(plot.margin = margin(0,0,0,0))+scale_y_continuous(position="right",limits = c(-2.2,2))
+
+layout<-"
+A#
+BC"
+pF1<-wrap_plots(A = RemoveYaxis(RemoveXaxis(p2C)), B = pC, C = RemoveYaxis(RemoveXaxis(p3C)), design = layout,widths = c(1,.2),heights = c(.2,1))
+pF1
+```
+
+
+## Liver
+
+load dataset
+
+```{r}
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+Get SWrc Liver
+
+```{r}
+SWrc_Liver<-dataMouseLiver$fits$SWrc[dataMouseLiver$fits$BF > exp(1)]
+names(SWrc_Liver)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF > exp(1)]
+
+Zeta_Liver<-dataMouseLiver$fits$zeta[dataMouseLiver$fits$BF > exp(1)]
+names(Zeta_Liver)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF > exp(1)]
+```
+
+Plot
+
+```{r}
+data<-as.data.frame(cbind(SWrc=(SWrc_Liver),Zeta=log10(Zeta_Liver)))
+dataL<-data
+pL<-PlotDensitySWrcZeta(data,Tissue = "Liver")
+
+p2L<-ggplot(data, aes(x=SWrc) )+geom_density(fill=colorCode[["Liver"]],alpha=.5)+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+xlim(0,1)+theme(plot.margin = margin(0,0,0,0))+ggtitle("Liver")+scale_x_continuous(position="top")
+
+p3L<-ggplot(data, aes(y=Zeta) )+geom_density(fill=colorCode[["Liver"]],alpha=.5,orientation="y")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+theme(plot.margin = margin(0,0,0,0))+scale_y_continuous(position="right",limits = c(-2.2,2))
+
+layout<-"
+A#
+BC"
+pF2<-wrap_plots(A = RemoveYaxis(RemoveXaxis(p2L)), B = RemoveYaxis(pL), C = RemoveYaxis(RemoveXaxis(p3L)), design = layout,widths = c(1,.2),heights = c(.2,1))
+pF2
+```
+
+## Blood
+
+```{r}
+dataHumanBlood<-LOADHUMAN()
+SWrc_Blood<-dataHumanBlood$fits$SWrc[dataHumanBlood$fits$BF>exp(1)]
+names(SWrc_Blood)<-dataHumanBlood$fits$ProbeName[dataHumanBlood$fits$BF>exp(1)]
+
+Zeta_Blood<-dataHumanBlood$fits$zeta[dataHumanBlood$fits$BF>exp(1)]
+names(Zeta_Blood)<-dataHumanBlood$fits$ProbeName[dataHumanBlood$fits$BF>exp(1)]
+```
+
+Plot
+
+```{r}
+data<-as.data.frame(cbind(SWrc=(SWrc_Blood),Zeta=log10(Zeta_Blood)))
+dataB<-data
+pB<-PlotDensitySWrcZeta(data,Tissue = "Blood")
+
+p2B<-ggplot(data, aes(x=SWrc) )+geom_density(fill=colorCode[["Blood"]],alpha=.5)+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+xlim(0,1)+theme(plot.margin = margin(0,0,0,0))+ggtitle("Blood")+scale_x_continuous(position="top")
+
+p3B<-ggplot(data, aes(y=Zeta) )+geom_density(fill=colorCode[["Blood"]],alpha=.5,orientation="y")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+xlab("")+theme(plot.margin = margin(0,0,0,0))+scale_y_continuous(position="right",limits = c(-2.2,2))
+
+layout<-"
+A#
+BC"
+pF3<-wrap_plots(A = RemoveYaxis(RemoveXaxis(p2B)), B = RemoveYaxis(pB), C = RemoveYaxis(RemoveXaxis(p3B)), design = layout,widths = c(1,.2),heights = c(.2,1))
+pF3
+```
+
+```{r}
+pF1<-pF1+ theme(axis.text = element_text(size = 10),axis.title = element_text(size = 12))
+pF2<-pF2+ theme(axis.text = element_text(size = 10),axis.title = element_text(size = 12))
+pF3<-pF3+ theme(axis.text = element_text(size = 10),axis.title = element_text(size = 12))
+
+gff<-pF1|pF2|pF3
+gff
+```
+
+
+
+
+## stats
+
+```{r}
+StatsSWrc<-function(SWrcData,ZetaData){
+  message(paste("Mean SWrc:",round(mean(SWrcData,na.rm=T),2)))
+  message(paste("Quantile SWrc > 0.5", 1-round(ecdf(SWrcData)(0.5),2)))
+  message(paste("Quantile Zeta < 1",round(ecdf(ZetaData)(1),2)))
+  message("...")
+}
+```
+
+
+```{r}
+StatsSWrc(SWrc_Cortex,Zeta_Cortex)
+StatsSWrc(SWrc_Liver,Zeta_Liver)
+StatsSWrc(SWrc_Blood,Zeta_Blood)
+```
+
+
+# Common Rhythmic Genes Plot
+
+Translate Mouse MGI <-> Human HGNC
+
+```{r}
+if (!file.exists("MM2HS.Rdata")){
+  # Blood (translate Human Symbol to Mouse Symbol)
+  library(biomaRt)
+  #human = useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+  #mouse = useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl")
+  human = useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl",host="https://dec2021.archive.ensembl.org/")
+  mouse = useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl",host="https://dec2021.archive.ensembl.org/")
+  
+  # Mouse to human
+  allMMgenes<-unique(c(dataMouseCortex$fits$Gene,dataMouseLiver$fits$Gene))
+  
+  MMtoHS<-getLDS(attributes = "mgi_symbol",
+         filters = "mgi_symbol", values = allMMgenes,mart = mouse,
+        attributesL = "hgnc_symbol", martL = human)
+  
+  allHSgenes<-unique(dataHumanBlood$fits$Gene)
+  HStoMM<-getLDS(attributes = "hgnc_symbol",
+         filters = "hgnc_symbol", values = allHSgenes,mart = human,
+        attributesL = "mgi_symbol", martL = mouse)
+  save(HStoMM,MMtoHS,file="MM2HS.Rdata")
+}else{
+  load("MM2HS.Rdata")
+}
+```
+
+Keep top genes per probes in human
+
+```{r}
+library(dplyr)
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+Cortexfits<-dataMouseCortex$fits
+Cortexfits<-Cortexfits[! duplicated(Cortexfits$Gene),]
+rownames(Cortexfits)<-Cortexfits$Gene
+Cortexfits<-cbind.data.frame(Gene=Cortexfits$Gene,BFCortex=Cortexfits$BF)
+
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+Liverfits<-dataMouseLiver$fits
+Liverfits<-Liverfits[! duplicated(Liverfits$Gene),]
+rownames(Liverfits)<-Liverfits$Gene
+Liverfits<-cbind.data.frame(Gene=Liverfits$Gene,BFLiver=Liverfits$BF)
+
+dataHumanBlood<-LOADHUMAN()
+Bloodfits<-dataHumanBlood$fits
+Bloodfits<-Bloodfits %>% group_by(Gene) %>% summarize(MaxBF=BF[which.max(BF)[1]],ProbeName=ProbeName[which.max(BF)[1]])
+Bloodfits<- merge(Bloodfits,HStoMM,by.x = "Gene",by.y="HGNC.symbol")
+Bloodfits<-Bloodfits %>% group_by(MGI.symbol) %>% summarize(BFBlood=max(MaxBF),ProbeName=ProbeName[which.max(MaxBF)[1]])
+
+GenesTopBF<-merge(Bloodfits,Cortexfits,by.x = "MGI.symbol",by.y="Gene",all.x = T,all.y=T)
+GenesTopBF<-merge(GenesTopBF,Liverfits,by.x = "MGI.symbol",by.y="Gene",all.x = T,all.y=T)
+head(GenesTopBF)
+
+# Transform to deltaBIC
+Genes_dBIC<-GenesTopBF
+Genes_dBIC$BFBlood<-log(Genes_dBIC$BFBlood)*2
+Genes_dBIC$BFCortex<-log(Genes_dBIC$BFCortex)*2
+Genes_dBIC$BFLiver<-log(Genes_dBIC$BFLiver)*2
+```
+
+Count genes by threshold
+
+```{r}
+library(ggallin)
+library(RColorBrewer)
+
+Thresholdseq<-c(-32,seq(-30,30,by=.1),100)
+res<-lapply(Thresholdseq,function(threshold){
+  return(list(CortexLiver=nrow(Genes_dBIC[Genes_dBIC$BFCortex >= threshold & Genes_dBIC$BFLiver >= threshold,]),
+              CortexBlood=nrow(Genes_dBIC[Genes_dBIC$BFCortex >= threshold & Genes_dBIC$BFBlood >= threshold,]),
+              LiverBlood=nrow(Genes_dBIC[Genes_dBIC$BFLiver >= threshold & Genes_dBIC$BFBlood >= threshold,]),
+              CortexLiverBlood=nrow(Genes_dBIC[Genes_dBIC$BFCortex >= threshold & Genes_dBIC$BFLiver >= threshold & Genes_dBIC$BFBlood >= threshold,])))
+})
+res_m<-do.call("rbind.data.frame",res)
+res_m$Threshold<-Thresholdseq
+res<-melt(res_m,id.vars = "Threshold")
+
+# crplot<-ggplot(aes(Threshold,value,color=variable),data=res)+geom_line()+
+#   theme_classic()+ylab("Number of\nCommon Rhythmic Genes")+xlab(expression(paste("Threshold ",Delta,BIC[10])))+
+#   scale_x_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30))+
+#   geom_vline(xintercept = 2,linetype="22",color="grey75")+
+#   scale_colour_brewer(palette = "Set1",name = "Tissue", labels = c("Cortex &\nLiver", "Cortex &\nBlood", "Liver &\nBlood","Cortex &\nLiver&\nBlood"))+theme(axis.text = element_text(size = 10),axis.title = element_text(size = 10))+
+#   theme(axis.text.x = element_text(angle = 45,hjust=1,size=8),axis.text.y=element_text(size=8),legend.text = element_text(size=8),legend.title = element_text(size=8),plot.margin = margin(0,0,0,0))
+
+crplot<-ggplot(aes(y=Threshold,x=value,color=variable),data=res)+geom_line()+
+  theme_classic()+xlab("Number of Common Rhythmic Genes")+ylab(expression(paste("Threshold ",Delta,BIC[10])))+
+  scale_y_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+
+  geom_hline(yintercept = 2,linetype="22",color="grey75")+
+  scale_colour_brewer(palette = "Set1",name = "Tissue",
+                      labels = c("Cortex &\nLiver", "Cortex &\nBlood", "Liver &\nBlood","Cortex &\nLiver&\nBlood"),
+                      breaks=c("CortexLiver","CortexBlood","LiverBlood","CortexLiverBlood")
+                      )
+  theme(axis.text = element_text(size = 10),axis.title = element_text(size = 10))+
+  theme(axis.text.x = element_text(angle = 45,hjust=1,size=8),axis.text.y=element_text(size=8),legend.text = element_text(size=8),legend.title = element_text(size=8),plot.margin = margin(0,0,0,0))
+
+
+crplot
+```
+
+```{r}
+addText<-function(gg,dd,xID,yID){
+  dd<-dd[!is.na(dd[,xID]) & !is.na(dd[,yID]),]
+  nlowq<-signif(nrow(dd[dd[,yID] < -2 & dd[,xID] > 2,])/nrow(dd),3)
+  nupq<-signif(nrow(dd[dd[,yID] > 2 & dd[,xID] < -2,])/nrow(dd),3)
+  ndiag<-signif(nrow(dd[dd[,yID] > 2 & dd[,xID] > 2,])/nrow(dd),3)
+  ndiagl<-signif(nrow(dd[dd[,yID] < -2 & dd[,xID] < -2,])/nrow(dd),3)
+  gg <- gg +
+    annotate("label",x=400,y=-32,label=paste("n=",nrow(dd),sep=""),hjust=1,vjust=0,size=3)+
+    annotate("label",x=2,y=-2,label=paste(nlowq*100,"%",sep=""),hjust=0,vjust=1,size=3)+
+    annotate("label",x=-2,y=2,label=paste(nupq*100,"%",sep=""),hjust=1,vjust=0,size=3)+
+    annotate("label",x=2,y=2,label=paste(ndiag*100,"%",sep=""),hjust=0,vjust=0,size=3)+
+    annotate("label",x=-2,y=-2,label=paste(ndiagl*100,"%",sep=""),hjust=1,vjust=1,size=3)+
+    coord_cartesian(ylim=c(-32,400),xlim=c(-32,400))
+  
+  return(gg)
+}
+```
+
+
+```{r}
+gg1<-ggplot(aes(BFLiver,BFCortex),data=Genes_dBIC)+theme_classic()+scale_y_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+scale_x_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+
+  xlab(expression(paste(Delta,BIC[10], " in Liver")))+
+  ylab(expression(paste(Delta,BIC[10], " in Cortex")))+
+  stat_density_2d_filled(geom = "polygon", colour="black",alpha=.8,contour_var = "ndensity",adjust=1,linewidth=0.5,breaks=seq(.1,1,by=.1))+
+  geom_scattermore(color="black")+
+  geom_hline(yintercept = c(-2,2),linetype="22")+geom_vline(xintercept =  c(-2,2),linetype="22")+
+  scale_fill_brewer(palette="Greys")
+
+gg2<-ggplot(aes(BFBlood,BFCortex),data=Genes_dBIC)+theme_classic()+scale_y_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+scale_x_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+
+  xlab(expression(paste(Delta,BIC[10], " in Blood")))+
+  ylab(expression(paste(Delta,BIC[10], " in Cortex")))+
+  stat_density_2d_filled(geom = "polygon", colour="black",alpha=.8,contour_var = "ndensity",adjust=1,linewidth=0.5,breaks=seq(.1,1,by=.1))+
+  geom_scattermore(color="black")+
+  geom_hline(yintercept =  c(-2,2),linetype="22")+geom_vline(xintercept =  c(-2,2),linetype="22")+
+  scale_fill_brewer(palette="Greys")
+
+gg3<-ggplot(aes(BFBlood,BFLiver),data=Genes_dBIC)+theme_classic()+scale_y_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+scale_x_continuous(trans=pseudolog10_trans,breaks = c(-30,-10,-6,-2,0,2,6,10,30,100))+
+  xlab(expression(paste(Delta,BIC[10], " in Blood")))+
+  ylab(expression(paste(Delta,BIC[10], " in Liver")))+
+  stat_density_2d_filled(geom = "polygon", colour="black",alpha=.8,contour_var = "ndensity",adjust=1,linewidth=0.5,breaks=seq(.1,1,by=.1))+
+  geom_scattermore(color="black")+
+  geom_hline(yintercept =  c(-2,2),linetype="22")+geom_vline(xintercept =  c(-2,2),linetype="22")+
+  scale_fill_brewer(palette="Greys")
+
+gg1<-addText(gg1,Genes_dBIC,"BFLiver","BFCortex")
+gg2<-addText(gg2,Genes_dBIC,"BFBlood","BFCortex")
+gg3<-addText(gg3,Genes_dBIC,"BFBlood","BFLiver")
+
+
+totplot<-(gg1 | gg2) / (gg3|crplot)
+totplot
+
+```
+
+```{r}
+gff2<-((pF1 | pF2 | pF3) / (gg1 | gg2 | gg3 | crplot))
+gff2
+```
+
+
+```{r,fig.height=12,fig.width=12}
+layout <- '
+ADE
+#BF
+##C
+'
+wrap_plots(A = pF1, B = pF2, C = pF3,D=gg1,E=gg2,"F"=gg3, design = layout)
+```
+
+
+# SWrc CI datasets 
+
+```{r}
+BootCortex<-read.table(CORTEXFITSBOOT,header=T)
+BootLiver<-read.table(LIVERFITSBOOT,header=T)
+BootBlood<-read.table(HUMANFITSBOOT,header=T)
+```
+
+Common rhythmic at dBIC > 2
+
+```{r}
+com_rhyth_CL<-Genes_dBIC[Genes_dBIC$BFCortex>2 & Genes_dBIC$BFLiver>2,]
+com_rhyth_CB<-Genes_dBIC[Genes_dBIC$BFCortex>2 & Genes_dBIC$BFBlood>2,]
+com_rhyth_LB<-Genes_dBIC[Genes_dBIC$BFLiver>2 & Genes_dBIC$BFBlood>2,]
+```
+
+
+```{r}
+CI<-c(0.025,0.975)
+Cortex_sw_qt<-BootCortex %>% group_by(Gene) %>% summarise(upqt=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                           lwqt=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                         mean=mean(SWrc,na.rm=T),
+                                                         sd=sd(SWrc),
+                                                         SWrcfit = SWrc[1])
+Cortex_sw_qt$Tissue<-"Cortex"
+
+Liver_sw_qt<-BootLiver %>% group_by(Gene) %>% summarise(upqt=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                           lwqt=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                         mean=mean(SWrc,na.rm=T),
+                                                         sd=sd(SWrc),
+                                                         SWrcfit = SWrc[1])
+Liver_sw_qt$Tissue<-"Liver"
+
+Blood_sw_qt<-BootBlood %>% group_by(ProbeName) %>% summarise(upqt=quantile(SWrc,prob=CI[2],na.rm=T),
+                                                           lwqt=quantile(SWrc,prob=CI[1],na.rm=T),
+                                                         mean=mean(SWrc,na.rm=T),
+                                                         sd=sd(SWrc),
+                                                         SWrcfit = SWrc[1])
+Blood_sw_qt$Tissue<-"Blood"
+```
+
+```{r}
+Cortex_ord<-Cortex_sw_qt[match(com_rhyth_CL$MGI.symbol,Cortex_sw_qt$Gene),]
+Liver_ord<-Liver_sw_qt[match(com_rhyth_CL$MGI.symbol,Liver_sw_qt$Gene),]
+idx<-which(Cortex_ord$lwqt >= Liver_ord$upqt | Liver_ord$lwqt >= Cortex_ord$upqt)
+Cortex_ord<-Cortex_ord[idx,]
+Liver_ord<-Liver_ord[idx,]
+
+wr<-cbind(Cortex_ord[,c(1,6,2,3)],Liver_ord[,c(6,2,3)])
+colnames(wr)<-c("Gene","SWrc_Cortex","SWrc_0.975CI_Cortex","SWrc_0.025CI_Cortex",
+                "SWrc_Liver","SWrc_0.975CI_Liver","SWrc_0.025CI_Liver")
+write.table(wr,file="../../Docs/Manuscript/Rebuttal_CellSystems/CortexVLiverSWrc.txt",sep="\t",col.names = T,row.names = F,quote = F)
+
+MeanSWrc<-apply(cbind(Cortex_ord$SWrcfit,Liver_ord$SWrcfit),1,mean)
+Cortex_ord$upqt<-Cortex_ord$upqt - MeanSWrc
+Cortex_ord$lwqt<-Cortex_ord$lwqt - MeanSWrc
+Cortex_ord$SWrcfit<-Cortex_ord$SWrcfit - MeanSWrc
+
+Liver_ord$upqt<-Liver_ord$upqt - MeanSWrc
+Liver_ord$lwqt<-Liver_ord$lwqt - MeanSWrc
+Liver_ord$SWrcfit<-Liver_ord$SWrcfit - MeanSWrc
+
+
+dd<-rbind.data.frame(Cortex_ord,Liver_ord)
+dd$rank<-rep(rank(-Liver_ord$SWrcfit),2)
+ggSWrcCL<-ggplot(aes(y=rank,yend=rank,x=lwqt,xend=upqt,color=Tissue),data=dd)+geom_segment(alpha=.5,lineend="square",linewidth=.1)+
+  scale_color_manual("Tissue",values=c(Cortex=colorCode[["Cortex"]],Liver=colorCode[["Liver"]]))+
+  theme_classic()+
+  annotate("point",y=dd$rank[dd$Tissue == "Cortex"],x=dd$SWrcfit[dd$Tissue == "Cortex"],fill=colorCode["Cortex"],shape = 21,size=.5)+
+  annotate("point",y=dd$rank[dd$Tissue == "Liver"],x=dd$SWrcfit[dd$Tissue == "Liver"],fill=colorCode["Liver"],shape = 21,size=.5)+
+  xlab(expression(paste(Delta,"SWrc")))+ylab("Genes")+
+  coord_cartesian(xlim=c(-0.6,0.6))
+ggSWrcCL
+#write.table(cbind(Cortex_ord,Liver_ord),file="../../Docs/Manuscript/Rebuttal_CellSystems/CortexVLiverSWrc.txt",sep="\t",col.names = T,row.names = F,quote = F)
+```
+
+
+```{r}
+Cortex_ord<-Cortex_sw_qt[match(com_rhyth_CB$MGI.symbol,Cortex_sw_qt$Gene),]
+Blood_ord<-Blood_sw_qt[match(com_rhyth_CB$ProbeName,Blood_sw_qt$ProbeName),]
+idx<-which(Cortex_ord$lwqt >= Blood_ord$upqt | Blood_ord$lwqt >= Cortex_ord$upqt)
+Cortex_ord<-Cortex_ord[idx,]
+Blood_ord<-Blood_ord[idx,]
+
+wr<-cbind(Cortex_ord[,c(1,6,2,3)],Blood_ord[,c(1,6,2,3)])
+colnames(wr)<-c("Gene","SWrc_Cortex","SWrc_0.975CI_Cortex","SWrc_0.025CI_Cortex",
+                "Probe","SWrc_Blood","SWrc_0.975CI_Blood","SWrc_0.025CI_Blood")
+write.table(wr,file="../../Docs/Manuscript/Rebuttal_CellSystems/CortexVBloodSWrc.txt",sep="\t",col.names = T,row.names = F,quote = F)
+
+MeanSWrc<-apply(cbind(Cortex_ord$SWrcfit,Blood_ord$SWrcfit),1,mean)
+Cortex_ord$upqt<-Cortex_ord$upqt - MeanSWrc
+Cortex_ord$lwqt<-Cortex_ord$lwqt - MeanSWrc
+Cortex_ord$SWrcfit<-Cortex_ord$SWrcfit - MeanSWrc
+
+Blood_ord$upqt<-Blood_ord$upqt - MeanSWrc
+Blood_ord$lwqt<-Blood_ord$lwqt - MeanSWrc
+Blood_ord$SWrcfit<-Blood_ord$SWrcfit - MeanSWrc
+
+colnames(Blood_ord)[1]<-"Gene"
+dd<-rbind.data.frame(Cortex_ord,Blood_ord)
+dd$rank<-rep(rank(-Blood_ord$SWrcfit),2)
+ggSWrcCB<-ggplot(aes(y=rank,yend=rank,x=lwqt,xend=upqt,color=Tissue),data=dd)+geom_segment(alpha=.5,lineend="square",linewidth=.1)+
+  scale_color_manual("Tissue",values=c(Cortex=colorCode[["Cortex"]],Blood=colorCode[["Blood"]]))+
+  theme_classic()+
+  annotate("point",y=dd$rank[dd$Tissue == "Cortex"],x=dd$SWrcfit[dd$Tissue == "Cortex"],fill=colorCode["Cortex"],shape = 21,size=.5)+
+  annotate("point",y=dd$rank[dd$Tissue == "Blood"],x=dd$SWrcfit[dd$Tissue == "Blood"],fill=colorCode["Blood"],shape = 21,size=.5)+
+  xlab(expression(paste(Delta,"SWrc")))+ylab("Genes")+
+  coord_cartesian(xlim=c(-0.6,0.6))
+ggSWrcCB
+
+```
+
+
+```{r}
+Liver_ord<-Liver_sw_qt[match(com_rhyth_LB$MGI.symbol,Liver_sw_qt$Gene),]
+Blood_ord<-Blood_sw_qt[match(com_rhyth_LB$ProbeName,Blood_sw_qt$ProbeName),]
+idx<-which(Liver_ord$lwqt >= Blood_ord$upqt | Blood_ord$lwqt >= Liver_ord$upqt)
+Liver_ord<-Liver_ord[idx,]
+Blood_ord<-Blood_ord[idx,]
+
+wr<-cbind(Liver_ord[,c(1,6,2,3)],Blood_ord[,c(1,6,2,3)])
+colnames(wr)<-c("Gene","SWrc_Liver","SWrc_0.975CI_Liver","SWrc_0.025CI_Liver",
+                "Probe","SWrc_Blood","SWrc_0.975CI_Blood","SWrc_0.025CI_Blood")
+write.table(wr,file="../../Docs/Manuscript/Rebuttal_CellSystems/LiverVBloodSWrc.txt",sep="\t",col.names = T,row.names = F,quote = F)
+
+
+MeanSWrc<-apply(cbind(Liver_ord$SWrcfit,Blood_ord$SWrcfit),1,mean)
+Liver_ord$upqt<-Liver_ord$upqt - MeanSWrc
+Liver_ord$lwqt<-Liver_ord$lwqt - MeanSWrc
+Liver_ord$SWrcfit<-Liver_ord$SWrcfit - MeanSWrc
+
+Blood_ord$upqt<-Blood_ord$upqt - MeanSWrc
+Blood_ord$lwqt<-Blood_ord$lwqt - MeanSWrc
+Blood_ord$SWrcfit<-Blood_ord$SWrcfit - MeanSWrc
+
+colnames(Blood_ord)[1]<-"Gene"
+dd<-rbind.data.frame(Liver_ord,Blood_ord)
+dd$rank<-rep(rank(Blood_ord$SWrcfit),2)
+ggSWrcLB<-ggplot(aes(y=rank,yend=rank,x=lwqt,xend=upqt,color=Tissue),data=dd)+geom_segment(alpha=.5,lineend="square",linewidth=.1)+
+  scale_color_manual("Tissue",values=c(Liver=colorCode[["Liver"]],Blood=colorCode[["Blood"]]))+
+  theme_classic()+
+  annotate("point",y=dd$rank[dd$Tissue == "Liver"],x=dd$SWrcfit[dd$Tissue == "Liver"],fill=colorCode["Liver"],shape = 21,size=.5)+
+  annotate("point",y=dd$rank[dd$Tissue == "Blood"],x=dd$SWrcfit[dd$Tissue == "Blood"],fill=colorCode["Blood"],shape = 21,size=.5)+
+  xlab(expression(paste(Delta,"SWrc")))+ylab("Genes")+
+  coord_cartesian(xlim=c(-0.6,0.6))
+ggSWrcLB
+```
+
+```{r,fig.height=12,fig.width=12}
+layout <- '
+ADE
+GBF
+HIC
+'
+ggfinal<-wrap_plots(A = pC+xlab("SWrc")+theme(legend.position = "none"), 
+                    B = pL+xlab("SWrc")+theme(legend.position = "none"), 
+                    C = pB+xlab("SWrc")+theme(legend.position = "none"),
+                    D=gg1+theme(legend.position = "none"),
+                    E=gg2+theme(legend.position = "none"),
+                    "F"=gg3+theme(legend.position = "none"),
+           G=ggSWrcCL+theme(legend.position = "none"),
+           H=ggSWrcCB+theme(legend.position = "none"),
+           I=ggSWrcLB+theme(legend.position = "none"),
+           design = layout)
+
+ggfinal
+```
+
+```{r}
+ggsave(paste(FIGUREDIR,"SWrc_Datasets.pdf",sep=""),width = 310, height = 310, units = "mm",plot =ggfinal)
+pdf(paste(FIGUREDIR,"SWrc_Datasets_Legends.pdf",sep=""))
+grid.newpage()
+grid.draw(cowplot::get_legend(pC))
+grid.newpage()
+grid.draw(cowplot::get_legend(pL))
+grid.newpage()
+grid.draw(cowplot::get_legend(pB))
+grid.newpage()
+grid.draw(cowplot::get_legend(gg1))
+dev.off()
+```
+
+# OLD
+
+## Enrichment cluster human
+
+
+
+```{r,eval=F}
+source(TOPGO_FUN)
+plot(dataB$SWrc,dataB$Zeta,col=as.factor(dataB$Zeta>log10(2)))
+GS<-rownames(dataB[dataB$Zeta>log10(2),])
+GA<-unique(fits$Gene)
+GSN<-unique(fits$Gene[fits$ProbeName %in% GS])
+res<-enrichmentHS(GSN,GA,onto="MF")
+head(res,20)
+res<-enrichmentHS(GSN,GA,onto="BP")
+head(res,20)
+```
+
+See where signal come from (SWrc > 0.25 or less)
+
+```{r,eval=F}
+source(TOPGO_FUN)
+plot(dataB$SWrc,dataB$Zeta,col=as.factor(dataB$Zeta>log10(2) & dataB$SWrc>0.25))
+GS<-rownames(dataB[dataB$Zeta>log10(2) & dataB$SWrc>0.25,])
+GA<-unique(fits$Gene)
+GSN<-unique(fits$Gene[fits$ProbeName %in% GS])
+
+res<-enrichmentHS(GSN,GA,onto="MF")
+head(res)
+res<-enrichmentHS(GSN,GA,onto="BP")
+head(res)
+
+
+plot(dataB$SWrc,dataB$Zeta,col=as.factor(dataB$Zeta>log10(2) & dataB$SWrc<0.25))
+GS<-rownames(dataB[dataB$Zeta>log10(2) & dataB$SWrc<0.25,])
+GA<-unique(fits$Gene)
+GSN<-unique(fits$Gene[fits$ProbeName %in% GS])
+
+res<-enrichmentHS(GSN,GA,onto="MF")
+head(res)
+res<-enrichmentHS(GSN,GA,onto="BP")
+head(res)
+```
+
+Where are these genes in mouse ?
+
+```{r,eval=F}
+AG<-unique(c(dataMouseLiver$fits$Gene,dataMouseCortex$fits$Gene))
+geneList <- factor(rep(1,length(AG)),levels = c(1,0))
+names(geneList) <- AG
+GOdata <- new("topGOdata",
+              description = "GO analysis",
+              ontology = "BP",
+              allGenes = geneList,
+              geneSel = function(x)x,
+              annot = annFUN.org,
+              mapping = "org.Mm.eg.db",
+              ID = "symbol",nodeSize = 10)
+allGO = genesInTerm(GOdata)
+
+#0020037
+plot(dataL$SWrc,dataL$Zeta,col=c(rgb(0,0,0,.05),"red")[as.factor(rownames(dataL) %in% allGO[["GO:0002577"]])],pch=19)
+plot(dataC$SWrc,dataC$Zeta,col=c(rgb(0,0,0,.05),"red")[as.factor(rownames(dataC) %in% allGO[["GO:0002577"]])],pch=19)
+
+ks.test(dataL$Zeta[! rownames(dataL) %in% allGO[["GO:0002577"]]],dataL$Zeta[rownames(dataL) %in% allGO[["GO:0002577"]]],alternative = "greater")
+```
+
+
+
+
+
+## Venn Diagram
+
+EDIT. Discarded. Reviewer comments: "I have a problem with the way rhythmicity is compared in the Venn diagrams. We know that this is associated with a lot of false negatives or an overestimation of the discrepancy between tissues (see PMID: 34189845)." See. Next section
+
+Rhythmic genes:
+
+```{r,eval=F}
+# Cortex
+rhyth_co<-names(SWrc_Cortex)
+# Liver
+rhyth_li<-names(SWrc_Liver)
+
+# Blood (translate Human Symbol to Mouse Symbol)
+library(biomaRt)
+human = useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl",host="Oct2018.archive.ensembl.org")
+mouse = useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "mmusculus_gene_ensembl",host="Oct2018.archive.ensembl.org")
+
+# Mouse to human
+allMMgenes<-unique(c(dataMouseCortex$fits$Gene,dataMouseLiver$fits$Gene))
+MMtoHS<-getLDS(attributes = "mgi_symbol",
+       filters = "mgi_symbol", values = allMMgenes,mart = mouse,
+      attributesL = "hgnc_symbol", martL = human)
+allHSgenes<-unique(fits$Gene)
+HStoMM<-getLDS(attributes = "hgnc_symbol",
+       filters = "hgnc_symbol", values = allHSgenes,mart = human,
+      attributesL = "mgi_symbol", martL = mouse)
+
+rhyth_bl<-HStoMM[HStoMM$HGNC.symbol %in% unique(fits$Gene[fits$BF>exp(1)]),2] # use homology human to mouse
+rhyth_bl<-rhyth_bl[!duplicated(rhyth_bl)]
+
+# Common genes rhythmic
+common<-rhyth_co[rhyth_co %in% rhyth_bl & rhyth_co %in% rhyth_li]
+```
+
+
+```{r,eval=F}
+data<-list(Cortex=rhyth_co,Liver=rhyth_li,Blood=rhyth_bl)
+gg1<-ggvenn(data,fill_color = c(colorCode[["Cortex"]],colorCode[["Liver"]],colorCode[["Blood"]]),
+  stroke_size = 0.1,stroke_alpha =.1,stroke_color = rgb(0,0,0), set_name_size = 3,text_size = 3,show_percentage =F,text_color="grey85",fill_alpha = .85)
+gg1
+
+
+# SW driven gene (filter for genes common)
+idxfilt<-names(SWrc_Cortex) %in% common
+rhyth_co<-names(SWrc_Cortex[SWrc_Cortex>0.5 & idxfilt])
+idxfilt<-names(SWrc_Liver) %in% common
+rhyth_li<-names(SWrc_Liver[SWrc_Liver>0.5 & idxfilt])
+rhyth_bl<-HStoMM[HStoMM$HGNC.symbol %in% fits$Gene[fits$ProbeName %in% names(SWrc_Blood[SWrc_Blood > 0.5])] & HStoMM$MGI.symbol %in% common,2] # use homology human to mouse
+rhyth_bl<-rhyth_bl[!duplicated(rhyth_bl)]
+
+commonSW<-rhyth_bl[rhyth_bl %in% rhyth_li & rhyth_bl %in% rhyth_co]
+
+data<-list(Cortex=rhyth_co,Liver=rhyth_li,Blood=rhyth_bl)
+gg2<-ggvenn(data,fill_color = c(colorCode[["Cortex"]],colorCode[["Liver"]],colorCode[["Blood"]]),
+  stroke_size = 0.1,stroke_alpha =.1,stroke_color = rgb(0,0,0), set_name_size = 3,text_size = 3,show_percentage =F,text_color="grey85",fill_alpha = .85)
+gg2
+
+# circadian driven gene
+# SW driven gene (filter for genes common)
+idxfilt<-names(SWrc_Cortex) %in% common
+rhyth_co<-names(SWrc_Cortex[SWrc_Cortex<0.5 & idxfilt])
+idxfilt<-names(SWrc_Liver) %in% common
+rhyth_li<-names(SWrc_Liver[SWrc_Liver<0.5 & idxfilt])
+rhyth_bl<-HStoMM[HStoMM$HGNC.symbol %in% fits$Gene[fits$ProbeName %in% names(SWrc_Blood[SWrc_Blood < 0.5])] & HStoMM$MGI.symbol %in% common,2] # use homology human to mouse
+rhyth_bl<-rhyth_bl[!duplicated(rhyth_bl)]
+
+commonCirc<-rhyth_bl[rhyth_bl %in% rhyth_li & rhyth_bl %in% rhyth_co]
+
+data<-list(Cortex=rhyth_co,Liver=rhyth_li,Blood=rhyth_bl)
+gg3<-ggvenn(data,fill_color = c(colorCode[["Cortex"]],colorCode[["Liver"]],colorCode[["Blood"]]),
+  stroke_size = 0.1,stroke_alpha =.1,stroke_color = rgb(0,0,0), set_name_size = 3,text_size = 3,show_percentage =F,text_color="grey85",fill_alpha = .85)
+gg3
+VennFinal<-gg1 + gg2 + gg3
+VennFinal
+
+library(cowplot)
+ggsave(paste(FIGUREDIR,"VennDiagrams.pdf",sep=""), width = 105, height = 50, units = "mm",plot =
+         plot_grid(gg1+theme(plot.margin = margin(-5,-15,-5,-15)),gg2+theme(plot.margin = margin(-5,-15,-5,-15)),gg3+theme(plot.margin = margin(-5,-15,-5,-15)),ncol=3),
+        device = cairo_pdf)
+```
+
+
+
+```{r,eval=F}
+idxfilt<-names(SWrc_Cortex) %in% common
+rhyth_co<-names(SWrc_Cortex[SWrc_Cortex>0.5 & idxfilt])
+idxfilt<-names(SWrc_Liver) %in% common
+rhyth_li<-names(SWrc_Liver[SWrc_Liver>0.5 & idxfilt])
+
+HStoMM$SWrc<-rep(NA,nrow(HStoMM))
+for (i in 1:nrow(HStoMM)){
+  aa<-fits[fits$Gene == HStoMM[i,"HGNC.symbol"],"ProbeName"]
+  if (any(aa %in% names(SWrc_Blood))){
+    HStoMM[i,"SWrc"]<-max(SWrc_Blood[aa],na.rm=T)
+  }
+}
+
+aa<-HStoMM[HStoMM$MGI.symbol %in% common,"SWrc"]
+names(aa)<-HStoMM[HStoMM$MGI.symbol %in% common,"MGI.symbol"]
+
+swrcall<-cbind.data.frame(Cortex=SWrc_Cortex[common],Liver=SWrc_Liver[common],Blood=aa[common])
+
+tail(sort(apply(swrcall,1,mean)))
+
+
+HStoMM$SWrc<-rep(NA,nrow(HStoMM))
+for (i in 1:nrow(HStoMM)){
+  aa<-fits[fits$Gene == HStoMM[i,"HGNC.symbol"],"ProbeName"]
+  if (any(aa %in% names(SWrc_Blood))){
+    HStoMM[i,"SWrc"]<-min(SWrc_Blood[aa],na.rm=T)
+  }
+}
+
+aa<-HStoMM[HStoMM$MGI.symbol %in% common,"SWrc"]
+names(aa)<-HStoMM[HStoMM$MGI.symbol %in% common,"MGI.symbol"]
+
+swrcall<-cbind.data.frame(Cortex=SWrc_Cortex[common],Liver=SWrc_Liver[common],Blood=aa[common])
+
+head(sort(apply(swrcall,1,mean)))
+```
+
+
+## Enrichment
+
+
+
+```{r,eval=F}
+source(TOPGO_FUN)
+res1<-enrichment(Genes = common,
+           GL.universe = unique(c(names(SWrc_Cortex),
+                         names(SWrc_Liver),
+                         HStoMM[HStoMM$HGNC.symbol %in% unique(fits$Gene[fits$BF>exp(1)]),2]))
+          )
+res2<-enrichment(Genes = commonSW,
+           GL.universe = unique(c(names(SWrc_Cortex),
+                         names(SWrc_Liver),
+                         HStoMM[HStoMM$HGNC.symbol %in% unique(fits$Gene[fits$BF>exp(1)]),2]))
+          )
+
+res3<-enrichment(Genes = commonCirc,
+           GL.universe = unique(c(names(SWrc_Cortex),
+                         names(SWrc_Liver),
+                         HStoMM[HStoMM$HGNC.symbol %in% unique(fits$Gene[fits$BF>exp(1)]),2]))
+          )
+```
+
+
+
+```{r,eval=F}
+pdf(paste(FIGUREDIR,"EnrichmentCommonGenes.pdf",sep=""))
+
+res1$classicFisher<-as.numeric(res1$classicFisher)
+gg<-ggplot(aes(x=FC,y=-log10(as.numeric(classicFisher)),label=Term,size=Significant),data=res1[as.numeric(res1$classicFisher)<=0.05,])+ #,color=MeanRank
+  geom_point() +
+  scale_size_continuous("Nb genes found")+
+  geom_text_repel(aes(label=ifelse(classicFisher <= sort(classicFisher)[10],strtrim(as.character(Term),55),'')),size=3,min.segment.length=.1,max.time = 5)
+gg<-gg+theme_classic()+ylab("-log10 p-value")+xlab("Enrichment")
+gg+ggtitle("Common Rhythmic Genes")
+
+
+
+res2$classicFisher<-as.numeric(res2$classicFisher)
+gg<-ggplot(aes(x=FC,y=-log10(as.numeric(classicFisher)),label=Term,size=Significant),data=res2[as.numeric(res2$classicFisher)<=0.05,])+ #,color=MeanRank
+  geom_point() +
+  scale_size_continuous("Nb genes found")+
+  geom_text_repel(aes(label=ifelse(classicFisher <= sort(classicFisher)[10],strtrim(as.character(Term),55),'')),size=3,min.segment.length=.1,max.time = 5)
+gg<-gg+theme_classic()+ylab("-log10 p-value")+xlab("Enrichment")
+gg+ggtitle("Common SW-driven Genes")
+
+
+res3$classicFisher<-as.numeric(res3$classicFisher)
+gg<-ggplot(aes(x=FC,y=-log10(as.numeric(classicFisher)),label=Term,size=Significant),data=res3[as.numeric(res3$classicFisher)<=0.05,])+ #,color=MeanRank
+  geom_point() +
+  scale_size_continuous("Nb genes found")+
+  geom_text_repel(aes(label=ifelse(classicFisher <= sort(classicFisher)[10],strtrim(as.character(Term),55),'')),size=3,min.segment.length=.1,max.time = 5)
+gg<-gg+theme_classic()+ylab("-log10 p-value")+xlab("Enrichment")
+gg+ggtitle("Common Circ.-driven Genes")
+
+dev.off()
+```
+
+## Plot SW-driven
+
+Order by SW
+
+```{r,eval=F}
+SWrc_SW_B<-sapply(commonSW,function(x){max(SWrc_Blood[fits$ProbeName[fits$Gene %in% HStoMM[HStoMM$MGI.symbol %in% x,]$HGNC.symbol]],na.rm=T)})
+SWrc_SW_C<-SWrc_Cortex[commonSW]
+SWrc_SW_L<-SWrc_Liver[commonSW]
+
+commonSW2<-commonSW[order(apply(cbind(SWrc_SW_B,SWrc_SW_C,SWrc_SW_L),1,mean),decreasing = T)]
+```
+
+
+```{r,eval=F}
+source(LINEARPLOT_FUN)
+pdf(paste(FIGUREDIR,"SWdrivenGenes.pdf",sep=""),width = 8,height = 8)
+
+for (Gene in commonSW2){
+  Probes<-fits[fits$Gene %in% HStoMM[HStoMM$MGI.symbol == Gene,]$HGNC.symbol,]$ProbeName
+  Probe<-names(SWrc_Blood[Probes][order(SWrc_Blood[Probes],decreasing = T)])[1]
+  
+  
+  pC<-LinearPlot(ProbeGene = Gene,Dataset = "Cortex",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(18,240))+ylab("log2 CPM")+ggtitle(bquote(paste(italic(.(Gene))," - Cortex"," (SWrc:",.(round(SWrc_Cortex[Gene],2)),"; ",zeta,"=",.(round(GetZeta(dataMouseCortex$fits,Gene),2)),")")))
+  
+  pL<-LinearPlot(ProbeGene = Gene,Dataset = "Liver",DaysShows = c(2,3,4,5,10),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(18,240))+ylab("log2 CPM")+ggtitle(bquote(paste(italic(.(Gene))," - Liver"," (SWrc:",.(round(SWrc_Liver[Gene],2)),"; ",zeta,"=",.(round(GetZeta(dataMouseLiver$fits,Gene),2)),")")))
+  
+  
+  Range<-GetRangeExpressionHS(Probe)
+  
+  pB_sync<-LinearPlot(ProbeGene = Probe,Dataset = "Desync",DaysShows = c(2,3),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T,ylim=Range$ylim1)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(42,72),ylim=Range$ylim1)+ggtitle("In-phase")+ylab("log2 intensity")
+
+  pB_desync<-LinearPlot(ProbeGene = Probe,Dataset = "Desync",DaysShows = c(5,6),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T,ylim=Range$ylim1)+
+    theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(114,144),ylim=Range$ylim1)+ggtitle("anti-phase")
+  
+  
+  pB_ctr<-LinearPlot(ProbeGene = Probe,Dataset = "Ctr",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T,ylim=Range$ylim2)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim2)+ggtitle("10h sleep + CR")+ylab("log2 intensity")
+  
+  pB_res<-LinearPlot(ProbeGene = Probe,Dataset = "Res",MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T,ylim=Range$ylim2)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=Range$ylim2)+ggtitle("6h sleep + CR")
+  
+  GeneHS<-HStoMM[HStoMM$MGI.symbol == Gene,]$HGNC.symbol
+  pB_Gene<-ggplot() +                      # Draw ggplot2 plot with text only
+    annotate("text",
+           x = 1,
+           y = 1,
+           size = 0.01,
+           label = "")+
+    theme_void()+ggtitle(bquote(paste(italic(.(GeneHS))," (",.(Probe),")"," - Blood"," (SWrc:",.(round(SWrc_Blood[Probe],2)),"; ",zeta,"=",.(round(GetZeta(fits,Probe),2)),")")))
+  
+  
+  ggF<-pB_Gene/(
+    pB_sync |
+  RemoveYaxis(pB_desync) |
+  (pB_ctr) |
+  RemoveYaxis(pB_res))
+  ggF<-ggF+plot_layout(heights = c(1,5))
+  print((RemoveXaxis(pC)/pL/ggF))
+  
+  
+}
+
+dev.off()
+```
+

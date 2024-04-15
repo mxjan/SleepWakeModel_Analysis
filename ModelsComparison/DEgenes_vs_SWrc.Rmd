@@ -1,0 +1,350 @@
+---
+title: "Differential Expression in Cortex and Liver"
+author: "Maxime Jan"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+See the difference between a standard Differential Expression (DE) of genes vs sleep-wake driven features derived from our model
+
+```{r}
+library(edgeR)
+library(SWDMr)
+library(ggplot2)
+source("../FileLocation.R")
+source(COLORFUN)
+library(doSNOW)
+source(LINEARPLOT_FUN)
+source(GENERAL_FUN)
+cols<-ColorCode()
+NCORES<-8
+```
+
+
+# DE Cortex
+
+load data metadata
+
+```{r}
+load(CORTEX_METADATA_RDATA)
+```
+
+Get counts
+
+```{r}
+CountsDIR<-CORTEXREADCOUNTSDIR
+
+i<-"T3N2"
+x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''),stringsAsFactors = F)
+x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+
+GeneCounts<-matrix(nrow=nrow(x),ncol=nrow(rna_meta))
+rownames(GeneCounts)<-x$V1
+colnames(GeneCounts)<-rownames(rna_meta)
+
+for (i in rownames(rna_meta)){
+  x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''))
+  x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+  
+  GeneCounts[,i]<-x$V4 # Take 'reverse' counts
+}
+```
+
+
+Get Differential expression at ZT6 SD vs ZT6 NSD
+
+```{r}
+GeneCountsFilt<-GeneCounts[apply(GeneCounts,1,mean)>=10,]
+
+TIME<-rna_meta$time
+TIME[TIME == 24]<-0
+TIME<-as.factor(TIME)
+BATCH<-as.factor(rna_meta$Batch)
+
+design <- model.matrix(~ 0 + TIME + BATCH)
+edgeobj <- DGEList(counts=GeneCountsFilt)
+edgeobj <- calcNormFactors(edgeobj,method="TMM")
+edgeobj <- estimateDisp(edgeobj, design)
+plotBCV(edgeobj)
+
+fit <- glmQLFit(edgeobj, design)
+
+GetTable<-function(contrastmade,fit,design){
+  print(contrastmade)
+  my.contrast <- makeContrasts(contrasts = contrastmade, levels=design)
+  qlf <- glmQLFTest(fit,contrast = my.contrast)
+  tt<-topTags(qlf,n = 100000)$table
+  return(tt)
+}
+
+# End SD vs ZT6
+T30v6<-GetTable(contrastmade = "TIME30 - TIME6",fit = fit,design = design)
+```
+
+Ensembl ID to symbol
+
+```{r}
+# Use gene symbol:
+library(biomaRt)
+# Use the same archive as GeneExpressionNormalization in DataProcess_C57BL6J_Cortex_TimeCourse_CHN2019
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+                         dataset = "mmusculus_gene_ensembl",host = "Oct2018.archive.ensembl.org")
+ttg <- biomaRt::getBM(
+  attributes = c("ensembl_gene_id","mgi_symbol"),
+  filters = "ensembl_gene_id",
+  values = rownames(T30v6),
+  mart = mart)
+ttg<-ttg[! duplicated(ttg$mgi_symbol),]
+rownames(ttg)<-ttg$ensembl_gene_id
+T30v6<-T30v6[rownames(T30v6) %in% ttg$ensembl_gene_id,]
+rownames(T30v6)<-ttg[rownames(T30v6),"mgi_symbol"]
+```
+
+Add model information and plot
+
+get SWrc
+
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+```
+
+Get SWrc Cortex
+
+```{r}
+cl <- makeCluster(NCORES)
+registerDoSNOW(cl)
+swdmr<-SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr)
+SWrc_Cortex<-foreach(i = dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+  GetSWrcMouse(Genes = i,swdmr,fits = dataMouseCortex$fits)
+}
+stopCluster(cl)
+```
+
+
+
+
+```{r}
+GSignifDE<-rownames(T30v6[T30v6$FDR<=0.05,])
+GNotSignifDE<-rownames(T30v6[T30v6$FDR>0.05,])
+
+data<-cbind.data.frame(logFC=T30v6[GSignifDE,"logFC",drop=F],WF=SWrc_Cortex[GSignifDE])
+data$Signif<-rep("Signif",nrow(data))
+
+dataNS<-cbind.data.frame(logFC=T30v6[GNotSignifDE,"logFC",drop=F],WF=SWrc_Cortex[GNotSignifDE])
+dataNS$Signif<-rep("NS",nrow(dataNS))
+
+data<-rbind.data.frame(data,dataNS)
+data$Signif<-as.character(data$Signif)
+
+data<-data[-which(is.na(data$WF) & data$Signif == "NS"),]
+idx<-is.na(data$WF)
+data$WF[idx]<-1.1
+data$WF[idx]<-jitter(data$WF[idx])
+data$Signif[idx]<-"DENoRythm"
+
+
+nrow(data[data$Signif == "Signif",])
+nrow(data[data$Signif == "DENoRythm",])
+
+pctNoRythm<-round(length(idx[idx ==T])/nrow(data[data$Signif %in% c("DENoRythm","Signif"),])*100,1)
+
+DE_cortex<-ggplot(aes(WF,logFC,color=Signif),data=data)+scale_color_manual(values=c(Signif="red",NS="black",DENoRythm="red"))+ylab("logFC (DE: T54-T30)")+xlab("Sleep-wake driven contribution")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+scale_x_continuous(breaks=c(seq(0,1,by=.25),1.1),labels=c(seq(0,1,by=.25),"N.R."))+geom_vline(xintercept = c(0,1),color="grey75",linetype="dashed")+geom_point(size=.5)+annotate("text",x=1.1,y=3.75,label=paste(pctNoRythm,"%",sep=""))
+  
+DE_cortex
+```
+
+
+
+# DE Liver
+
+load data metadata
+
+```{r}
+load(LIVER_METADATA_RDATA)
+```
+
+Get counts
+
+```{r}
+CountsDIR<-LIVERREADCOUNTSDIR
+
+i<-rownames(rna_meta)[1]
+x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''),stringsAsFactors = F)
+x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+
+GeneCounts<-matrix(nrow=nrow(x),ncol=nrow(rna_meta))
+rownames(GeneCounts)<-x$V1
+colnames(GeneCounts)<-rownames(rna_meta)
+
+for (i in rownames(rna_meta)){
+  x<-read.table(paste(CountsDIR,i,"ReadsPerGene.out.tab",sep=''))
+  x<-x[seq(5,nrow(x)),] # 5 first lines are stats
+  
+  GeneCounts[,i]<-x$V4 # Take 'reverse' counts ($4)
+  
+}
+```
+
+
+Get Differential expression at ZT6 SD vs ZT6 NSD
+
+```{r}
+GeneCountsFilt<-GeneCounts[apply(GeneCounts,1,mean)>=10,]
+
+TIME<-rna_meta$Time
+TIME[TIME == 24]<-0
+TIME<-as.factor(TIME)
+BATCH<-as.factor(rna_meta$Batch)
+BATCHAlign<-rep(0,nrow(rna_meta))
+BATCHAlign[rna_meta$pctDif > 3] <- 1
+BATCHAlign[rna_meta$pctDif < -3] <- -1
+BATCHAlign<-as.factor(BATCHAlign)
+
+
+design <- model.matrix(~ 0 + TIME + BATCHAlign)
+edgeobj <- DGEList(counts=GeneCountsFilt)
+edgeobj <- calcNormFactors(edgeobj,method="TMM")
+edgeobj <- estimateDisp(edgeobj, design)
+plotBCV(edgeobj)
+
+fit <- glmQLFit(edgeobj, design)
+
+GetTable<-function(contrastmade,fit,design){
+  print(contrastmade)
+  my.contrast <- makeContrasts(contrasts = contrastmade, levels=design)
+  qlf <- glmQLFTest(fit,contrast = my.contrast)
+  tt<-topTags(qlf,n = 100000)$table
+  return(tt)
+}
+
+# End SD vs ZT6
+T30v6L<-GetTable(contrastmade = "TIME30 - TIME6",fit = fit,design = design)
+```
+
+Ensembl ID to symbol
+
+```{r}
+# Use gene symbol:
+library(biomaRt)
+# Use the same archive as GeneExpressionNormalization in DataProcess_C57BL6J_Cortex_TimeCourse_CHN2019
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+                         dataset = "mmusculus_gene_ensembl",host = "Oct2018.archive.ensembl.org")
+ttg <- biomaRt::getBM(
+  attributes = c("ensembl_gene_id","mgi_symbol"),
+  filters = "ensembl_gene_id",
+  values = rownames(T30v6L),
+  mart = mart)
+ttg<-ttg[! duplicated(ttg$mgi_symbol),]
+rownames(ttg)<-ttg$ensembl_gene_id
+T30v6L<-T30v6L[rownames(T30v6L) %in% ttg$ensembl_gene_id,]
+rownames(T30v6L)<-ttg[rownames(T30v6L),"mgi_symbol"]
+```
+
+Add model information and plot
+
+get SWrc
+
+
+```{r}
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+Get SWrc Cortex
+
+```{r}
+cl <- makeCluster(NCORES)
+registerDoSNOW(cl)
+swdmr<-SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr)
+SWrc_Liver<-foreach(i = dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+  GetSWrcMouse(Genes = i,swdmr,fits = dataMouseLiver$fits)
+}
+stopCluster(cl)
+```
+
+
+
+```{r}
+GSignifDE<-rownames(T30v6L[T30v6L$FDR<=0.05,])
+GNotSignifDE<-rownames(T30v6L[T30v6L$FDR>0.05,])
+data<-cbind.data.frame(logFC=T30v6L[GSignifDE,"logFC",drop=F],WF=SWrc_Liver[GSignifDE])
+data$Signif<-rep("Signif",nrow(data))
+
+dataNS<-cbind.data.frame(logFC=T30v6L[GNotSignifDE,"logFC",drop=F],WF=SWrc_Liver[GNotSignifDE])
+dataNS$Signif<-rep("NS",nrow(dataNS))
+
+data<-rbind.data.frame(data,dataNS)
+data$Signif<-as.character(data$Signif)
+
+data<-data[-which(is.na(data$WF) & data$Signif == "NS"),]
+idx<-is.na(data$WF)
+data$WF[idx]<-1.1
+data$WF[idx]<-jitter(data$WF[idx])
+data$Signif[idx]<-"DENoRythm"
+
+nrow(data[data$Signif == "Signif",])
+nrow(data[data$Signif == "DENoRythm",])
+
+pctNoRythm<-round(length(idx[idx ==T])/nrow(data[data$Signif %in% c("DENoRythm","Signif"),])*100,1)
+
+DE_liver<-ggplot(aes(WF,logFC,color=Signif),data=data)+scale_color_manual(values=c(Signif="red",NS="black",DENoRythm="red"))+ylab("logFC (DE: T54-T30)")+xlab("Sleep-wake driven contribution")+theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")+scale_x_continuous(breaks=c(seq(0,1,by=.25),1.1),labels=c(seq(0,1,by=.25),"N.R."))+geom_vline(xintercept = c(0,1),color="grey75",linetype="dashed")+geom_point(size=.5)+annotate("text",x=1.1,y=3.75,label=paste(pctNoRythm,"%",sep=""))
+
+DE_liver
+```
+
+# Plot both 
+
+```{r,fig.height=3,fig.width=6}
+library(patchwork)
+#DE_liver$data["Aen",]
+DE_liver<-DE_liver + annotate("text",label=substitute(paste(italic("Aen"))),x=1.05,y=-2.5,hjust=1)+
+  annotate("segment",x=1.05,xend=DE_liver$data["Aen","WF"],y=-2.5,yend=DE_liver$data["Aen","logFC"])
+DE_liver<-DE_liver + annotate("text",label=substitute(paste(italic("Serf2"))),x=0.75,y=-3,hjust=1)+
+  annotate("segment",x=0.75,xend=DE_liver$data["Serf2","WF"],y=-3,yend=DE_liver$data["Serf2","logFC"])
+
+DE_liver<-DE_liver+theme(axis.text = element_text(size=10))
+DE_cortex<-DE_cortex+theme(axis.text = element_text(size=10))
+
+gg<-DE_cortex+ggtitle("Cortex")+ylim(-4,4)+xlab("SWrc")|DE_liver+ggtitle("Liver")+ylim(-4,4)+xlab("SWrc")
+gg
+ggsave(plot=gg,filename = "../Figures/DEgenes_vs_SWrc.pdf",width = 8,height = 3)
+```
+
+
+```{r}
+nrow(DE_cortex$data[DE_cortex$data$Signif == "Signif" & DE_cortex$data$WF>=0.5,])/nrow(DE_cortex$data[DE_cortex$data$Signif %in% c("DENoRythm","Signif"),])
+
+nrow(DE_liver$data[DE_liver$data$Signif == "Signif" & DE_liver$data$WF>=0.5,])/nrow(DE_liver$data[DE_liver$data$Signif %in% c("DENoRythm","Signif"),])
+```
+
+See gene examples
+
+
+```{r}
+Aen_l<-LinearPlot(ProbeGene = "Aen",Dataset = "Liver",DaysShows = c(1,2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 0,AddSleepWake = F)+coord_cartesian(xlim=c(18,120))+ggtitle(substitute(paste(italic("Aen"),"- Liver")))+geom_hline(yintercept = log2(mean(cpm(edgeobj)[ttg$ensembl_gene_id[ttg$mgi_symbol == "Aen"],])))+ylab("Expression [log2 CPM]")
+Aen_l
+
+Serf2_l<-LinearPlot(ProbeGene = "Serf2",Dataset = "Liver",DaysShows = c(1,2,3,4,5),MeanPointSize = 3,npretty = 2,ModelFitLine = 1,AddSleepWake = T,AddASkeldonSol = T)+coord_cartesian(xlim=c(18,120))+ggtitle(substitute(paste(italic("Serf2"),"- Liver")))+ylab(NULL)
+
+gg<-Aen_l|Serf2_l
+
+ggsave(filename = "../Figures/DEgenes_vs_SWrc_ExampleGenes.pdf",plot=gg,width = 8,height = 3)
+
+```
+

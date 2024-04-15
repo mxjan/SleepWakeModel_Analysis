@@ -1,0 +1,617 @@
+---
+title: "Clock Genes & Tissue synchronicity"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+# LIBS
+
+```{r}
+library(patchwork)
+library(ggplot2)
+library(SWDMr)
+library(reshape2)
+library(doSNOW)
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(RASTERPLOT_FUN)
+library(parallel)
+library(ggrepel)
+source(TIMESIGNATR_FUN)
+source(TISSUESYNC_FUN)
+colorCode<-ColorCode()
+NCORES<-8
+source(TOPGO_FUN)
+```
+
+# SWrc
+
+## Cortex
+
+load dataset
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+```
+
+Get SWrc Cortex
+
+```{r}
+# cl <- makeCluster(NCORES)
+# registerDoSNOW(cl)
+# swdmr<-SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr)
+# SWrc_Cortex<-foreach(i = dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetSWrcMouse(Genes = i,swdmr,fits = dataMouseCortex$fits)
+# }
+# Zeta_Cortex<-foreach(i = dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetZeta(Genes = i,fits = dataMouseCortex$fits)
+# }
+# stopCluster(cl)
+SWrc_Cortex<-dataMouseCortex$fits$SWrc[dataMouseCortex$fits$BF > exp(1)]
+names(SWrc_Cortex)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF > exp(1)]
+
+Zeta_Cortex<-dataMouseCortex$fits$zeta[dataMouseCortex$fits$BF > exp(1)]
+names(Zeta_Cortex)<-dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF > exp(1)]
+
+```
+
+
+## Liver
+
+load dataset
+
+```{r}
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+Get SWrc Liver
+
+```{r}
+# cl <- makeCluster(NCORES)
+# registerDoSNOW(cl)
+# swdmr<-SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr)
+# SWrc_Liver<-foreach(i = dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetSWrcMouse(Genes = i,swdmr,fits = dataMouseLiver$fits)
+# }
+# Zeta_Liver<-foreach(i = dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetZeta(Genes = i,fits = dataMouseLiver$fits)
+# }
+# stopCluster(cl)
+
+SWrc_Liver<-dataMouseLiver$fits$SWrc[dataMouseLiver$fits$BF > exp(1)]
+names(SWrc_Liver)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF > exp(1)]
+
+Zeta_Liver<-dataMouseLiver$fits$zeta[dataMouseLiver$fits$BF > exp(1)]
+names(Zeta_Liver)<-dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF > exp(1)]
+```
+
+
+## Blood
+
+```{r}
+load(HUMANDATASET_RDATA)
+fits<-read.table(HUMANFITS,header=T,fill=T)
+fits<-fits[! duplicated(fits$ProbeName) & ! is.na(fits$BF) & fits$omega != 0,] # trouble if omega == 0
+rownames(fits)<-fits$ProbeName
+```
+
+
+Get SWrc Human
+
+```{r}
+# cl <- makeCluster(NCORES)
+# registerDoSNOW(cl)
+# SWrc_Blood<-foreach(i = fits$ProbeName[fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetSWrcHuman(ProbeIDs = i,SWdf_human = MeanSWdf,HT_Desync = HT_Desync,fits = fits)
+# }
+# Zeta_Blood<-foreach(i = fits$ProbeName[fits$BF>exp(1)],.packages = c("SWDMr"),.combine="c") %dopar% {
+#   GetZeta(Genes = i,fits = fits)
+# }
+# stopCluster(cl)
+
+dataHumanBlood<-LOADHUMAN()
+SWrc_Blood<-dataHumanBlood$fits$SWrc[dataHumanBlood$fits$BF>exp(1)]
+names(SWrc_Blood)<-dataHumanBlood$fits$ProbeName[dataHumanBlood$fits$BF>exp(1)]
+
+Zeta_Blood<-dataHumanBlood$fits$zeta[dataHumanBlood$fits$BF>exp(1)]
+names(Zeta_Blood)<-dataHumanBlood$fits$ProbeName[dataHumanBlood$fits$BF>exp(1)]
+```
+
+
+# SWrc Clock genes
+
+
+```{r}
+ClockGenes<-c("Per1","Per2","Per3","Cry1","Cry2","Arntl","Clock","Npas2","Nr1d1","Nr1d2","Dbp","Nfil3","Rora","Rorb","Rorc")
+```
+
+```{r}
+SW_C<-SWrc_Cortex[names(SWrc_Cortex) %in% ClockGenes]
+SW_L<-SWrc_Liver[names(SWrc_Liver) %in% ClockGenes]
+
+ProbesToGenes<-fits$Gene
+names(ProbesToGenes)<-fits$ProbeName
+SW_B<-SWrc_Blood[names(ProbesToGenes[ProbesToGenes %in% toupper(ClockGenes)])]
+SW_B<-SW_B[!is.na(SW_B)]
+SW_BB<-aggregate(SW_B,list(ProbesToGenes[names(SW_B)]),mean)
+rownames(SW_BB)<-SW_BB$Group.1
+```
+
+
+```{r}
+data<-cbind.data.frame(Gene=ClockGenes,Cortex=SW_C[ClockGenes],Liver=SW_L[ClockGenes],Blood=SW_BB[toupper(ClockGenes),"x"]);rownames(data)<-data$Gene
+
+data<-melt(data)
+data<-data[! is.na(data$value),]
+data$value<-data$value-.5
+gg<-ggplot(aes(x=Gene,y=value,fill=variable),data=data)+geom_bar(stat="identity",position = position_dodge2(preserve = "single", padding = 0),width = 0.6)+scale_fill_manual(values=c(Cortex=colorCode[["Cortex"]],Liver=colorCode[["Liver"]],Blood=colorCode[["Blood"]]))+ 
+  theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),axis.text.x = element_text(angle=45,hjust=1),legend.position = "none")
+gg<-gg+scale_y_continuous(breaks=seq(-.5,.5,by=.25),labels=seq(0,1,b=.25),limits=c(-.5,.5))+ylab("SWrc")+xlab(NULL)#+xlab("Clock Genes")
+gg<-gg+ theme(axis.text = element_text(size = 12),axis.title = element_text(size = 12)) 
+gg
+```
+
+
+```{r}
+library(openxlsx)
+library(dplyr)
+xB<-read.xlsx("../../Data/Table_S1.xlsx",sheet = 3)
+xC<-read.xlsx("../../Data/Table_S1.xlsx",sheet = 1)
+xL<-read.xlsx("../../Data/Table_S1.xlsx",sheet = 2)
+
+xB<-xB[xB$BF>exp(1),]
+xC<-xC[xC$BF>exp(1),]
+xL<-xL[xL$BF>exp(1),]
+
+xB<-xB[xB$Gene %in% toupper(ClockGenes),]
+xB<-xB[! is.na(xB$SWrc_95CI_down),]
+xB<-xB %>% group_by(Gene) %>% slice(which.max(BF))
+xB$Tissue<-"Blood"
+xC<-xC[xC$Gene %in% ClockGenes,]
+xC$GENE<-toupper(xC$Gene)
+xC$Tissue<-"Cortex"
+xL<-xL[xL$Gene %in% ClockGenes,]
+xL$GENE<-toupper(xL$Gene)
+xL$Tissue<-"Liver"
+colnames(xB)[2]<-"GENE"
+
+xAll<-rbind.data.frame(xB[,c("GENE","SWrc","SWrc_95CI_down","SWrc_95CI_up","Tissue")],
+            xC[,c("GENE","SWrc","SWrc_95CI_down","SWrc_95CI_up","Tissue")],
+            xL[,c("GENE","SWrc","SWrc_95CI_down","SWrc_95CI_up","Tissue")])
+
+gg<-ggplot(data=xAll)+
+  geom_bar( aes(x=GENE, y=SWrc,fill=Tissue), stat="identity", alpha=0.7,
+            position = position_dodge2(preserve = "single",padding = 0)) +
+  geom_errorbar(aes(x=GENE,ymin=SWrc_95CI_down,ymax=SWrc_95CI_up,color=Tissue),
+                stat="identity",
+                position = position_dodge2(preserve = "single",padding = 0))+
+  scale_color_manual(values=c(Cortex=colorCode[["Cortex"]],Liver=colorCode[["Liver"]],Blood=colorCode[["Blood"]]))+
+  scale_fill_manual(values=c(Cortex=colorCode[["Cortex"]],Liver=colorCode[["Liver"]],Blood=colorCode[["Blood"]]))+ theme(axis.text = element_text(size = 8),axis.title = element_text(size = 8)) +
+   theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),axis.text.x = element_text(angle=45,hjust=1),legend.position = "none")
+gg
+```
+
+
+
+# Tissue Synchronicity
+
+Predict time of cortex, liver and blood from a training in baseline.
+
+Use TimeSignatR
+
+## Cortex
+
+Load and scale data
+
+```{r}
+load(CORTEXFITTED_RDATA)
+rna_expr<-dataMouseCortex$rna_expr
+fit<-dataMouseCortex$fits
+# scale data 
+for (i in rownames(fitted_CortexFullModel)){
+  mrna<-mean(rna_expr[,i])
+  sdrna<-sd(rna_expr[,i])
+  rna_expr[,i]<-(rna_expr[,i]-mrna)/sdrna
+  fitted_CortexFullModel[i,]<-(fitted_CortexFullModel[i,]-mrna)/sdrna
+}
+
+idx_clock<-colnames(rna_expr) %in% fit$Gene[fit$BF> exp(1)] & colnames(rna_expr) %in% rownames(fitted_CortexFullModel) & ! duplicated(colnames(rna_expr)) & colnames(rna_expr) %in% ClockGenes
+```
+
+Get penalization (a and s of glm)
+
+```{r,message=FALSE,eval=F}
+# source(TISSUESYNC_FUN)
+# PLOO<-GetPenalization_LeaveOneOut(expr_train = rna_expr[rna_expr$Time<=48,idx_clock],time_train = rna_expr$Time[rna_expr$Time<=48])
+# # 0.2 , exp(-2.5)
+```
+
+
+```{r}
+TSorig_C<-GetTime_TS(expr_train = rna_expr[rna_expr$Time<=48,idx_clock],
+           time_train = rna_expr$Time[rna_expr$Time<=48],
+           expr_pred = rna_expr[rna_expr$Time>=24 & rna_expr$Time < 216,idx_clock],
+           time_pred = rna_expr$Time[rna_expr$Time>=24 & rna_expr$Time < 216],
+           a =0.2, s=exp(-2.5),fittedOsciModel = fitted_CortexFullModel[rownames(fitted_CortexFullModel) %in%  ClockGenes,],cols = colorCode[["Cortex"]])
+```
+
+
+```{r}
+PlotTS(TSorig_C)
+```
+
+
+## Liver 
+
+```{r}
+load(LIVERFITTED_RDATA)
+rna_expr<-dataMouseLiver$rna_expr
+fit<-dataMouseLiver$fits
+for (i in rownames(fitted_LiverFullModel)){
+  mrna<-mean(rna_expr[,i])
+  sdrna<-sd(rna_expr[,i])
+  rna_expr[,i]<-(rna_expr[,i]-mrna)/sdrna
+  fitted_LiverFullModel[i,]<-(fitted_LiverFullModel[i,]-mrna)/sdrna
+}
+
+idx_clock<-colnames(rna_expr) %in% fit$Gene[fit$BF> exp(1)] & colnames(rna_expr) %in% rownames(fitted_LiverFullModel) & ! duplicated(colnames(rna_expr)) & colnames(rna_expr) %in% ClockGenes
+```
+
+get best penalization parameters
+
+```{r,eval=F}
+PLOO<-GetPenalization_LeaveOneOut(expr_train = rna_expr[rna_expr$Time<=48,idx_train],time_train = rna_expr$Time[rna_expr$Time<=48])
+#0.2 , exp(-2.5)
+```
+
+```{r}
+TSorig_L<-GetTime_TS(expr_train = rna_expr[rna_expr$Time<=48,idx_clock],
+           time_train = rna_expr$Time[rna_expr$Time<=48],
+           expr_pred = rna_expr[rna_expr$Time>=24 & rna_expr$Time < 216,idx_clock],
+           time_pred = rna_expr$Time[rna_expr$Time>=24 & rna_expr$Time < 216],
+           a =0.4, s=exp(-2.5),fittedOsciModel = fitted_LiverFullModel[rownames(fitted_LiverFullModel) %in%  ClockGenes,],cols = colorCode[["Liver"]])
+```
+
+
+```{r}
+PlotTS(TSorig_L,tissue = "Liver")
+```
+
+## Difference
+
+```{r}
+dd<-cbind.data.frame(Time=TSorig_C$PredsLineTime,DiffTime=TSorig_C$PredsLine-TSorig_L$PredsLine)
+gg2<-ggplot(aes(Time,DiffTime),data=dd)+annotate("rect",xmin=48,xmax=54,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25),color="black")
+
+
+gg2<-gg2+geom_path(color=colorCode[["Cortex"]],size=1)+scale_x_continuous(breaks=seq(24,102,by=12),labels=c("24\n(ZT0)","36\n(ZT12)","48\n(ZT0)",
+                                                              "60\n(ZT12)","72\n(ZT0)","84\n(ZT12)","96\n(ZT0)"),limits=c(24,102))
+gg2<-gg2+geom_hline(yintercept = 0)
+
+gg2<-gg2+theme_bw()+theme(panel.grid.major = element_blank(),
+               panel.grid.minor = element_blank())
+
+gg2<-gg2+ylab("Cortex vs Liver\ndelay [h]")+theme(plot.margin = margin(0,0,0,0))+xlab("Time [h]")+ theme(axis.text = element_text(size = 8),axis.title = element_text(size = 8)) 
+gg2
+
+```
+
+
+
+## Save
+
+```{r,fig.height=5,fig.width=12}
+ggf<-gg | (RemoveYlab(RemoveXaxis(PlotTS(TSorig_C,tissue = "Cortex")+theme(plot.margin = margin(0,0,0,0),axis.text = element_text(size = 8),axis.title = element_text(size = 8)))) / RemoveXaxis(PlotTS(TSorig_L,tissue = "Liver")+theme(plot.margin = margin(0,0,0,0),axis.text = element_text(size = 8),axis.title = element_text(size = 8))) / gg2)
+ggf+plot_layout(widths = c(.75,1))
+ggsave(paste(FIGUREDIR,"ClockGenes.pdf",sep=""), width = 205, height = 75, units = "mm",plot =ggf+plot_layout(widths = c(.75,1)))
+```
+
+# Intra-tissue synchronicity
+
+## Example
+
+```{r}
+Gene<-"Arntl"
+# In Cortex
+swdmrCortex<-SWDMr(SWdist = dataMouseCortex$SWdf,Gexp = dataMouseCortex$rna_expr)
+
+model<-C57BL6_TimeCourse_GetFullModel(swdmrCortex,Gene=Gene)
+fittedc<-SWDMrFit(model,dataMouseCortex$fits[dataMouseCortex$fits$Gene %in% Gene,][1,])
+# In Liver
+swdmrLiver<-SWDMr(SWdist = dataMouseLiver$SWdf,Gexp = dataMouseLiver$rna_expr)
+model<-C57BL6_TimeCourse_GetFullModel(swdmrLiver,Gene=Gene)
+fittedl<-SWDMrFit(model,dataMouseLiver$fits[dataMouseLiver$fits$Gene %in% Gene,][1,])
+
+ExLinearPlot<-function(fitted,Tissue){
+  gg1e<-ggplot(aes(x=time,y=y1),data=as.data.frame(fitted))+
+    annotate("rect",xmin=48,xmax=54,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25),color="black")+
+    geom_line(color=colorCode[[Tissue]],linetype="22")+
+    annotate("point",x=(c(0,6,12,18)+24),y=fitted$y1[fitted$time %in% (c(0,6,12,18)+24)],shape=21,fill=colorCode[[Tissue]],color="black")+
+    annotate("point",x=(c(6,12,18,24)+48),y=fitted$y1[fitted$time %in% (c(6,12,18,24)+48)],shape=19,color=colorCode[[Tissue]])+
+    scale_x_continuous(limits=c(24,72),breaks=seq(24,72,by=6),labels = (seq(24,72,by=6)) ) + 
+    xlab("ZT") + 
+    theme_classic()+
+    ggtitle(bquote(paste(paste(italic("Bmal1")," - ", .(Tissue)))))+
+    ylab("Expression level")
+  gg1s<-ggplot(aes(x=time,y=y2),data=as.data.frame(fitted))+
+    annotate("rect",xmin=48,xmax=54,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25),color="black")+
+    geom_line(color=colorCode[[Tissue]],linetype="22")+
+    annotate("point",x=(c(0,6,12,18)+24),y=fitted$y2[fitted$time %in% (c(0,6,12,18)+24)],shape=21,fill=colorCode[[Tissue]],color="black")+
+    annotate("point",x=(c(6,12,18,24)+48),y=fitted$y2[fitted$time %in% (c(6,12,18,24)+48)],shape=19,color=colorCode[[Tissue]])+
+    scale_x_continuous(limits=c(24,72),breaks=seq(24,72,by=6),labels = paste((seq(24,72,by=6)),"\n(",(seq(24,72,by=6) %% 24),")",sep="") ) + 
+    xlab("Time [h]\n(ZT)") + 
+    theme_classic()+
+    ylab("Expression rate")
+  ggc<-RemoveXaxis(gg1e)/gg1s
+  return(ggc)
+}
+gg1c<-ExLinearPlot(fittedc,"Cortex")
+gg1l<-ExLinearPlot(fittedl,"Liver")
+```
+
+```{r}
+ClockPlot<-function(fitted,Tissue){
+  
+  # Mapping of time-point in baseline to 24h clock
+  idx<-sapply(seq(0,24,by=6),function(x){which.min(abs(fitted$time-x))})
+  y<-cbind(sin(2*pi/24*fitted$time[idx]),cos(2*pi/24*fitted$time[idx]))
+  pos<-fitted$y1[idx]
+  speed<-fitted$y2[idx]
+  biv_mod<-lm(y~pos+speed)
+  
+  # Predict other time-points
+  idx2<-sapply(seq(30,72,by=6),function(x){which.min(abs(fitted$time-x))})
+  preds<-predict(biv_mod,cbind.data.frame(pos=fitted$y1[idx2],speed=fitted$y2[idx2]))
+  dd<-cbind.data.frame(x=(atan2(preds[,1],preds[,2])%%(2*pi))*(24/(2*pi)),y=sqrt(preds[,1]^2+preds[,2]^2),label=paste("T",seq(30,72,by=6),sep=""))
+  
+  # Plot points
+  gg<-ggplot(aes(x,y,label=label),data=dd)+
+    annotate("point",x=dd[1:4,"x"],y=dd[1:4,"y"],shape=21,color="black",fill=colorCode[[Tissue]])+
+    annotate("point",x=dd[5:8,"x"],y=dd[5:8,"y"],shape=19,color=colorCode[[Tissue]])+
+    coord_polar()+
+    scale_x_continuous(limits = c(0,24),breaks = seq(0,24,by=6),labels =seq(0,24,by=6) )+
+    scale_y_continuous(limits = c(0,1.2),breaks=seq(0,1,by=.5),labels=c("0%","50%","100%"))+
+    annotate("text",x=dd[1:4,"x"],y=dd[1:4,"y"],label=c(expression(T30[ZT6]),expression(T36[ZT12]),expression(T42[ZT18]),expression(T48[ZT0])),hjust=0,vjust=0)+
+    annotate("text",x=dd[5:8,"x"],y=dd[5:8,"y"],label=c(expression(T54[ZT6]),expression(T60[ZT12]),expression(T66[ZT18]),expression(T72[ZT0])),hjust=0,vjust=0)+
+    theme_minimal()+
+    xlab(NULL)+
+    ylab(NULL)
+  
+  # Add expression and expression rate line
+  idx<-sapply(seq(1,24),function(x){which.min(abs(fitted$time-x))})
+  preds<-predict(biv_mod,cbind.data.frame(pos=seq(-10,10,by=.01),speed=rep(0,length(seq(-10,10,by=.01)))))
+  gg<-gg + annotate("path",x=(atan2(preds[,1],preds[,2])%%(2*pi))*(24/(2*pi)),y=sqrt(preds[,1]^2+preds[,2]^2))
+  preds<-predict(biv_mod,cbind.data.frame(pos=rep(mean(fitted$y1[idx]),length(seq(-4,4,by=.001))),speed=seq(-4,4,by=.001)))
+  gg<-gg + annotate("path",x=(atan2(preds[,1],preds[,2])%%(2*pi))*(24/(2*pi)),y=sqrt(preds[,1]^2+preds[,2]^2))
+  
+  return(gg)
+}
+
+gg2c<-ClockPlot(fittedc,"Cortex")
+gg2l<-ClockPlot(fittedl,"Liver")
+```
+
+
+```{r}
+gg1c|gg2c | gg1l | gg2l
+ggf<-gg1c|gg2c | gg1l | gg2l
+```
+
+```{r}
+ggsave(paste(FIGUREDIR,"ClockPlotExample.pdf",sep=""), width = 205*1.5, height = 75*1.5, units = "mm",plot =ggf)#+plot_layout(widths = c(.75,1)))
+```
+
+
+## Time-point in tissue
+
+```{r}
+
+GetAmpPhase<-function(Gene,swdmr,fit){
+  model<-C57BL6_TimeCourse_GetFullModel(swdmr,Gene=Gene)
+  fitted<-SWDMrFit(model,fit[fit$Gene %in% Gene,][1,])
+  #idx<-sapply(seq(1,24),function(x){which.min(abs(fitted$time-x))})
+  idx<-sapply(seq(6,24,by=6),function(x){which.min(abs(fitted$time-x))})
+  y<-cbind(sin(2*pi/24*fitted$time[idx]),cos(2*pi/24*fitted$time[idx]))
+  pos<-fitted$y1[idx]
+  speed<-fitted$y2[idx]
+  biv_mod<-lm(y~pos+speed)
+  sm<-summary(biv_mod)
+  if (min(c(sm[[1]]$r.squared,sm[[2]]$r.squared))>0.6){
+      idx2<-sapply(seq(30,96,by=6),function(x){which.min(abs(fitted$time-x))})
+      preds<-predict(biv_mod,cbind.data.frame(pos=fitted$y1[idx2],speed=fitted$y2[idx2]))
+    
+    return(c(phase=(atan2(preds[,1],preds[,2])%%(2*pi))*(24/(2*pi)),
+             amp=sqrt(preds[,1]^2+preds[,2]^2)))
+  }else{
+    #print(Gene)
+    #print(c(sm[[1]]$r.squared,sm[[2]]$r.squared))
+    return(c(phase=rep(NA,length(seq(30,96,by=6))),amp=rep(NA,length(seq(30,96,by=6)))))
+  }
+  
+
+}
+
+res<-sapply(dataMouseCortex$fit$Gene[dataMouseCortex$fit$BF>exp(1)],GetAmpPhase,swdmr=swdmrCortex,fit=dataMouseCortex$fit)
+length(na.omit(res[1,]))/ncol(res)
+
+DoPlot<-function(x="phase.1",y="amp.1",Pylab=F,Tissue="Cortex"){
+  require(scattermore)
+  dd<-as.data.frame(t(res[c(x,y),]))
+  dd[[y]]<-dd[[y]]
+  
+  gg<- ggplot(aes(dd[,x],dd[,y]),data=dd)
+    #geom_point(size=.5,color=alpha(colorCode[[Tissue]],.05))+
+  gg<-gg+geom_scattermore(pointsize = .5,color=alpha(colorCode[[Tissue]],.05))+
+    coord_polar()+
+    scale_x_continuous(limits = c(0,24),breaks = seq(0,24,by=6),labels =seq(0,24,by=6) )+
+    theme_minimal()+xlab(NULL)
+  if (x == "phase.5"){
+    gg<-gg+annotate("rect",xmin=0.01,xmax=6,ymin=0.05,ymax=20,fill=rgb(1,0,0,.25))
+  }
+  if (Pylab == F){
+    gg<-gg+ylab(NULL)+  theme(
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+  }
+  
+  library(circular)
+  anglecir =  circular(res[x,]*(2*pi/24), type="angles", units="radians",modulo="2pi", template='geographics')
+  
+  ma<-mean(anglecir,na.rm=T) / (2*pi/24)
+  sda<-sd(anglecir,na.rm=T) / (2*pi/24)
+  mamp<-mean(res[y,],na.rm=T)
+  
+  gg<-gg+annotate("point",x=ma,y=mamp)
+  gg<-gg+scale_y_continuous(trans="log10",limits = c(0.05,20),breaks=c(0.2,1,5),labels=c("20%","100%","500%"))
+  # gg<-gg+annotate("path",x=ma,y=mamp,xend=ma+sda,yend=mamp)
+  # gg<-gg+annotate("path",x=ma,y=mamp,xend=ma-sda,yend=mamp)
+  
+  return(gg)
+}
+
+gg<-(DoPlot("phase.1","amp.1",Pylab=T)/DoPlot("phase.5","amp.5")/DoPlot("phase.9","amp.9"))|
+(DoPlot("phase.2","amp.2")/DoPlot("phase.6","amp.6")/DoPlot("phase.10","amp.10"))|
+(DoPlot("phase.3","amp.3")/DoPlot("phase.7","amp.7")/DoPlot("phase.11","amp.11"))|
+(DoPlot("phase.4","amp.4")/DoPlot("phase.8","amp.8")/DoPlot("phase.12","amp.12"))
+gg
+
+```
+
+```{r}
+ggsave(paste(FIGUREDIR,"CortexGenesScattering.pdf",sep=""), width = 205, height = 150, units = "mm",plot =gg)
+```
+
+
+
+```{r}
+res<-sapply(dataMouseLiver$fit$Gene[dataMouseLiver$fit$BF>exp(1)],GetAmpPhase,swdmr=swdmrLiver,fit=dataMouseLiver$fit)
+length(na.omit(res[1,]))/ncol(res)
+
+gg<-(DoPlot("phase.1","amp.1",Pylab=T,Tissue = "Liver")/DoPlot("phase.5","amp.5",Tissue = "Liver")/DoPlot("phase.9","amp.9",Tissue = "Liver"))|
+(DoPlot("phase.2","amp.2",Tissue = "Liver")/DoPlot("phase.6","amp.6",Tissue = "Liver")/DoPlot("phase.10","amp.10",Tissue = "Liver"))|
+(DoPlot("phase.3","amp.3",Tissue = "Liver")/DoPlot("phase.7","amp.7",Tissue = "Liver")/DoPlot("phase.11","amp.11",Tissue = "Liver"))|
+(DoPlot("phase.4","amp.4",Tissue = "Liver")/DoPlot("phase.8","amp.8",Tissue = "Liver")/DoPlot("phase.12","amp.12",Tissue = "Liver"))
+gg
+```
+
+```{r}
+ggsave(paste(FIGUREDIR,"LiverGenesScattering.pdf",sep=""), width = 205, height = 150, units = "mm",plot =gg)
+```
+
+
+
+## Time-point in tissue only underdamped
+
+```{r}
+GetAmpPhase<-function(Gene,swdmr,fit){
+  model<-C57BL6_TimeCourse_GetFullModel(swdmr,Gene=Gene)
+  fitted<-SWDMrFit(model,fit[fit$Gene %in% Gene,][1,])
+  #idx<-sapply(seq(1,24),function(x){which.min(abs(fitted$time-x))})
+  idx<-sapply(seq(6,24,by=6),function(x){which.min(abs(fitted$time-x))})
+  y<-cbind(sin(2*pi/24*fitted$time[idx]),cos(2*pi/24*fitted$time[idx]))
+  pos<-fitted$y1[idx]
+  speed<-fitted$y2[idx]
+  biv_mod<-lm(y~pos+speed)
+  sm<-summary(biv_mod)
+  if (min(c(sm[[1]]$r.squared,sm[[2]]$r.squared))>0.6){
+      idx2<-sapply(seq(30,96,by=6),function(x){which.min(abs(fitted$time-x))})
+      preds<-predict(biv_mod,cbind.data.frame(pos=fitted$y1[idx2],speed=fitted$y2[idx2]))
+    
+    return(c(phase=(atan2(preds[,1],preds[,2])%%(2*pi))*(24/(2*pi)),
+             amp=sqrt(preds[,1]^2+preds[,2]^2)))
+  }else{
+    #print(Gene)
+    #print(c(sm[[1]]$r.squared,sm[[2]]$r.squared))
+    return(c(phase=rep(NA,length(seq(30,96,by=6))),amp=rep(NA,length(seq(30,96,by=6)))))
+  }
+  
+
+}
+
+res<-sapply(dataMouseCortex$fit$Gene[dataMouseCortex$fits$BF>exp(1) & dataMouseCortex$fits$zeta < 1],GetAmpPhase,swdmr=swdmrCortex,fit=dataMouseCortex$fits)
+rownames(res)<-c(paste("phase",seq(1,12),sep="."),paste("amp",seq(1,12),sep="."))
+length(na.omit(res[1,]))/ncol(res)
+
+DoPlot<-function(x="phase1",y="amp1",Pylab=F,Tissue="Cortex"){
+  require(scattermore)
+  dd<-as.data.frame(t(res[c(x,y),]))
+  dd[[y]]<-dd[[y]]
+  
+  gg<- ggplot(aes(dd[,x],dd[,y]),data=dd)
+    #geom_point(size=.5,color=alpha(colorCode[[Tissue]],.05))+
+  gg<-gg+geom_scattermore(pointsize = 1,color=alpha(colorCode[[Tissue]],.5))+
+    coord_polar()+
+    scale_x_continuous(limits = c(0,24),breaks = seq(0,24,by=6),labels =seq(0,24,by=6) )+
+    theme_minimal()+xlab(NULL)
+  if (x == "phase.5"){
+    gg<-gg+annotate("rect",xmin=0.01,xmax=6,ymin=0.05,ymax=20,fill=rgb(1,0,0,.25))
+  }
+  if (Pylab == F){
+    gg<-gg+ylab(NULL)+  theme(
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+  }
+  
+  library(circular)
+  anglecir =  circular(res[x,]*(2*pi/24), type="angles", units="radians",modulo="2pi", template='geographics')
+  
+  ma<-mean(anglecir,na.rm=T) / (2*pi/24)
+  sda<-sd(anglecir,na.rm=T) / (2*pi/24)
+  print(sda)
+  mamp<-mean(res[y,],na.rm=T)
+  
+  gg<-gg+annotate("point",x=ma,y=mamp)
+  gg<-gg+scale_y_continuous(trans="log10",limits = c(0.05,20),breaks=c(0.2,1,5),labels=c("20%","100%","500%"))
+  # gg<-gg+annotate("path",x=ma,y=mamp,xend=ma+sda,yend=mamp)
+  # gg<-gg+annotate("path",x=ma,y=mamp,xend=ma-sda,yend=mamp)
+  
+  return(gg)
+}
+
+gg<-(DoPlot("phase.1","amp.1",Pylab=T)/DoPlot("phase.5","amp.5")/DoPlot("phase.9","amp.9"))|
+(DoPlot("phase.2","amp.2")/DoPlot("phase.6","amp.6")/DoPlot("phase.10","amp.10"))|
+(DoPlot("phase.3","amp.3")/DoPlot("phase.7","amp.7")/DoPlot("phase.11","amp.11"))|
+(DoPlot("phase.4","amp.4")/DoPlot("phase.8","amp.8")/DoPlot("phase.12","amp.12"))
+gg
+
+```
+
+
+
+```{r}
+res<-sapply(dataMouseLiver$fit$Gene[dataMouseLiver$fit$BF>exp(1) & dataMouseLiver$fit$zeta<.1],GetAmpPhase,swdmr=swdmrLiver,fit=dataMouseLiver$fit)
+length(na.omit(res[1,]))/ncol(res)
+rownames(res)<-c(paste("phase",seq(1,12),sep="."),paste("amp",seq(1,12),sep="."))
+
+gg<-(DoPlot("phase.1","amp.1",Pylab=T,Tissue = "Liver")/DoPlot("phase.5","amp.5",Tissue = "Liver")/DoPlot("phase.9","amp.9",Tissue = "Liver"))|
+(DoPlot("phase.2","amp.2",Tissue = "Liver")/DoPlot("phase.6","amp.6",Tissue = "Liver")/DoPlot("phase.10","amp.10",Tissue = "Liver"))|
+(DoPlot("phase.3","amp.3",Tissue = "Liver")/DoPlot("phase.7","amp.7",Tissue = "Liver")/DoPlot("phase.11","amp.11",Tissue = "Liver"))|
+(DoPlot("phase.4","amp.4",Tissue = "Liver")/DoPlot("phase.8","amp.8",Tissue = "Liver")/DoPlot("phase.12","amp.12",Tissue = "Liver"))
+gg
+```
+
+```{r}
+ggsave(paste(FIGUREDIR,"LiverGenesScattering.pdf",sep=""), width = 205, height = 150, units = "mm",plot =gg)
+```

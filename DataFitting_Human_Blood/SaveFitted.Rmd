@@ -1,0 +1,116 @@
+---
+title: "Save fitted values"
+output: html_document
+---
+
+
+Simply save fitted data into an Rdata
+
+```{r}
+library(SWDMr)
+library(doSNOW)
+source("../FileLocation.R")
+source(HUMANMODELS_FUN)
+NCORES<-7
+load(HUMANDATASET_RDATA)
+```
+
+Fits
+
+```{r}
+fits<-read.table(HUMANFITS,header=T,fill=T)
+fits<-fits[! duplicated(fits$ProbeName) & ! is.na(fits$BF) & fits$omega != 0,] # trouble if omega == 0
+rownames(fits)<-fits$ProbeName
+```
+
+
+Functions to fit data:
+
+```{r}
+# Desync protocol
+PredDesync<-function(ProbeID){
+  Expr<-HT_Desync[HT_Desync$Time < 72,ProbeID]
+  Time<-HT_Desync[HT_Desync$Time < 72,"Time"]
+  MeanGeneExprInBaseline<-coef(lm(Expr~sin(2*pi/24*Time) + cos(2*pi/24*Time) ))[["(Intercept)"]]
+  model_desync<-Human_TimeCourse_GetFullModel(MeanSWdf,HT_Desync,ProbeID,intercept=MeanGeneExprInBaseline)
+  
+  out<-SWDMrFit(model_desync,params = fits[ProbeID,],method="Solve")
+  return(list(ProbeID=out$y1[out$time>0 & out$time<=225],
+            Circ=out$circ_sol[out$time[-1]>0 & out$time[-1]<=225]+model_desync@intercept, #144.0
+            SW=out$SW_response[out$time[-1]>0 & out$time[-1]<=225] + 
+              out$trans_sol[out$time[-1]>0 & out$time[-1]<=225]+model_desync@intercept))
+}
+
+
+
+PredExt<-function(ProbeID){
+
+  model_ext<-Human_TimeCourse_GetFullModel(MeanSWdfExt,HT_Ext,ProbeID)
+  
+  out<-SWDMrFit(model_ext,params = fits[ProbeID,],method="Solve")
+  
+  return(list(ProbeID=out$y1[out$time>0 & out$time<=258.0],
+            Circ=out$circ_sol[out$time[-1]>0 & out$time[-1]<=258.0]+fits[ProbeID,"intercept"],
+            SW=out$SW_response[out$time[-1]>0 & out$time[-1]<=258.0] + 
+              out$trans_sol[out$time[-1]>0 & out$time[-1]<=258.0]+fits[ProbeID,"intercept"]))
+  
+}
+
+PredRest<-function(ProbeID){
+
+  model_res<-Human_TimeCourse_GetFullModel(MeanSWdfRest,HT_Res,ProbeID)
+  
+  out<-SWDMrFit(model_res,params = fits[ProbeID,],method="Solve")
+  
+  return(list(ProbeID=out$y1[out$time>0 & out$time<=258.0],
+            Circ=out$circ_sol[out$time[-1]>0 & out$time[-1]<=258.0]+fits[ProbeID,"intercept"],
+            SW=out$SW_response[out$time[-1]>0 & out$time[-1]<=258.0] + 
+              out$trans_sol[out$time[-1]>0 & out$time[-1]<=258.0]+fits[ProbeID,"intercept"]))
+  
+}
+
+InterceptDifference<-function(ProbeID){
+  Expr<-HT_Desync[HT_Desync$Time < 72,ProbeID]
+  Time<-HT_Desync[HT_Desync$Time < 72,"Time"]
+  MeanGeneExprInBaseline<-coef(lm(Expr~sin(2*pi/24*Time) + cos(2*pi/24*Time) ))[["(Intercept)"]]
+  interceptdiff<-MeanGeneExprInBaseline-fits[ProbeID,"intercept"]
+  return(interceptdiff)
+}
+```
+
+
+
+
+```{r}
+cl <- makeCluster(NCORES)
+clusterExport(cl,c("HT_Desync","HT_Res","HT_Ext","Human_TimeCourse_GetFullModel","MeanSWdf","MeanSWdfExt","MeanSWdfRest","fits"))
+clusterEvalQ(cl,library(SWDMr))
+Preds_Desync<-parSapply(cl,fits$ProbeName,PredDesync)
+
+Preds_Desync_circ<-do.call(rbind,Preds_Desync[2,])
+Preds_Desync_sw<-do.call(rbind,Preds_Desync[3,])
+Preds_Desync<-do.call(rbind,Preds_Desync[1,])
+
+Preds_Ext<-parSapply(cl,fits$ProbeName,PredExt)
+Preds_Ext_circ<-do.call(rbind,Preds_Ext[2,])
+Preds_Ext_sw<-do.call(rbind,Preds_Ext[3,])
+Preds_Ext<-do.call(rbind,Preds_Ext[1,])
+
+Preds_Res<-parSapply(cl,fits$ProbeName,PredRest)
+Preds_Res_circ<-do.call(rbind,Preds_Res[2,])
+Preds_Res_sw<-do.call(rbind,Preds_Res[3,])
+Preds_Res<-do.call(rbind,Preds_Res[1,])
+
+InterceptsDiff<-parSapply(cl,fits$ProbeName,InterceptDifference)
+
+stopCluster(cl)
+```
+
+```{r}
+save(file=HUMANFITTED_RDATA,
+     Preds_Desync,Preds_Desync_circ,Preds_Desync_sw,
+     Preds_Ext,Preds_Ext_circ,Preds_Ext_sw,
+     Preds_Res,Preds_Res_circ,Preds_Res_sw,
+     InterceptsDiff)
+```
+

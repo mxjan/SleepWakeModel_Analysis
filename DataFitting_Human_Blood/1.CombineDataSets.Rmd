@@ -1,0 +1,160 @@
+---
+title: "Combine Datasets"
+output: html_document
+---
+
+# Load Data
+
+
+```{r}
+library(ggplot2)
+source("../FileLocation.R")
+```
+
+
+```{r}
+############ DESYNC SLEEP DATA ############
+# Circadian phase for individuals
+load(HUMANFD_CIRCADIANINFO_RDATA)
+# Sleep_Wake data for individuals
+load(HUMANFD_SLEEP_RDATA)
+
+############ RESTEXT SLEEP DATA ############
+# Sleep-wake data
+load(HUMANCR_SLEEP_RDATA)
+
+############ EXPRESSION DATA ############ 
+# Probe expression normalized and corrected
+load(HUMANTRANSCRIPTOMESWDMR_RDATA)
+```
+
+Sleep and Wake as proprotion
+
+```{r}
+MeanSWdf$Sleep<-MeanSWdf$Sleep*10
+MeanSWdf$Wake<-MeanSWdf$Wake*10
+
+MeanSWdfExt$Sleep<-MeanSWdfExt$Slee*10
+MeanSWdfExt$Wake<-MeanSWdfExt$Wake*10
+
+MeanSWdfRest$Sleep<-MeanSWdfRest$Sleep*10
+MeanSWdfRest$Wake<-MeanSWdfRest$Wake*10
+```
+
+
+```{r}
+save(HT_Desync,HT_Ext,HT_Res,ExprMeta,MeanSWdf,MeanSWdfExt,MeanSWdfRest,GSE39445_metaD,GSE48113_metaD,file=HUMANDATASET_RDATA)
+```
+
+# Summary figure
+
+```{r,fig.width=6,fig.height=2}
+AddDayLine<-function(p){
+  p<-p+geom_vline(xintercept = seq(0,252,by=24),linetype="solid",col="grey50",size=.5)
+  return(p)
+}
+
+source(COLORFUN)
+library(cowplot)
+cols<-ColorCode()
+p1<-ggplot(aes(x=Time,y=Sleep),data=MeanSWdf)
+p1<-AddDayLine(p1)
+p1<-p1+geom_path(col=cols["Sleep"],size=2)
+p1<-p1+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))#
+p1 <- p1 + theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),
+                   axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank())
+p1<-p1+ylab("Sleep\nProportion")
+p1<-p1+annotate("path",x=MeanSWdf$Time,y=0.25+0.25*sin(2*pi/24*MeanSWdf$Time+0.589),col=cols["SCNforce"],size=2)
+p1<-p1+ggtitle("Desynchronization protocol")
+
+
+
+datas<-cbind.data.frame(Time=unique(HT_Desync$Time))
+p1s<-ggplot(aes(x=Time,y=1),data=datas)
+p1s<-AddDayLine(p1s)
+p1s<-p1s+geom_point(col="#8a0303")
+p1s<-p1s+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))
+p1s <- p1s + theme(panel.background = element_blank(),panel.border = element_blank(),#element_rect(fill=NA),
+                   axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank(),
+                   axis.title.y=element_blank(),
+                   axis.text.y=element_blank(),
+                   axis.ticks.y=element_blank(),
+                   plot.title = element_text(size = 10),
+                   plot.margin = margin(0, 0, 1, 0))
+p1s<-p1s+theme(axis.line = element_line(color = 'black'))
+#p1s<-p1s+ggtitle("Desynchronization blood sampling")
+
+
+
+p2<-ggplot(aes(x=Time,y=Sleep),data=MeanSWdfExt)
+p2<-AddDayLine(p2)
+p2<-p2+geom_path(col=cols["Sleep"],size=2)
+p2<-p2+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))#
+p2 <- p2 + theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),
+                   axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank())
+p2<-p2+ylab("Sleep\nProportion")
+p2<-p2+annotate("path",x=MeanSWdfExt$Time,y=0.25+0.25*sin(2*pi/24*MeanSWdfExt$Time+0.589),col=cols["SCNforce"],size=2)
+p2<-p2+ggtitle("Extended Sleep protocol")
+
+
+datas<-cbind.data.frame(Time=unique(HT_Ext$Time))
+p2s<-ggplot(aes(x=Time,y=1),data=datas)
+p2s<-AddDayLine(p2s)
+p2s<-p2s+geom_point(col="#8a0303")
+p2s<-p2s+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))
+p2s <- p2s + theme(panel.background = element_blank(),panel.border = element_blank(),
+                   axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank(),
+                   axis.title.y=element_blank(),
+                   axis.text.y=element_blank(),
+                   axis.ticks.y=element_blank(),
+                   plot.title = element_text(size = 10),
+                   plot.margin = margin(0, 0, 1, 0))
+p2s<-p2s+theme(axis.line = element_line(color = 'black'))
+#p2s<-p2s+ggtitle("Extended Sleep blood sampling")
+
+p3<-ggplot(aes(x=Time,y=Sleep),data=MeanSWdfRest)
+p3<-AddDayLine(p3)
+p3<-p3+geom_path(col=cols["Sleep"],size=2)
+p3<-p3+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))#
+p3 <- p3 + theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),
+                   axis.title.x=element_blank(),
+                   axis.text.x=element_blank(),
+                   axis.ticks.x=element_blank())
+p3<-p3+ylab("Sleep\nProportion")
+p3<-p3+annotate("path",x=MeanSWdfRest$Time,y=0.25+0.25*sin(2*pi/24*MeanSWdfRest$Time+0.589),col=cols["SCNforce"],size=2)
+p3<-p3+ggtitle("Restricted Sleep protocol")
+
+datas<-cbind.data.frame(Time=unique(HT_Res$Time))
+p3s<-ggplot(aes(x=Time,y=1),data=datas)
+p3s<-AddDayLine(p3s)
+p3s<-p3s+geom_point(col="#8a0303")
+p3s<-p3s+scale_x_continuous(breaks=seq(0,252,24),limits = c(0,252))
+p3s <- p3s + theme(panel.background = element_blank(),panel.border = element_blank(),
+                   axis.title.y=element_blank(),
+                   axis.text.y=element_blank(),
+                   axis.ticks.y=element_blank(),
+                   plot.title = element_text(size = 10),
+                   plot.margin = margin(0, 0, 1, 0))
+p3s<-p3s+theme(axis.line = element_line(color = 'black'))
+#p3s<-p3s+ggtitle("Restricted Sleep blood sampling")
+
+```
+
+```{r,fig.width=8,fig.height=4}
+plot_grid(p1, p1s,p2,p2s,p3,p3s, ncol = 1, align = "v",rel_heights = c(10, 1,10,1,10,4.5))
+```
+
+```{r}
+sessionInfo()
+```
+
+
+

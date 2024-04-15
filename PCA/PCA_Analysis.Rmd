@@ -1,0 +1,583 @@
+---
+title: "PCA analysis"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+# LIBS
+
+```{r}
+library(patchwork)
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(RASTERPLOT_FUN)
+source(PCA_FUN)
+source(TOPGO_FUN)
+library(parallel)
+colorCode<-ColorCode()
+NCORES<-5
+```
+
+# PCA in the cortex
+
+Load data
+
+```{r}
+dataMouseCortex<-LOADMOUSE(Tissue="Cortex")
+```
+
+Load fitted data
+
+```{r}
+load(CORTEXFITTED_RDATA)
+```
+
+
+
+```{r,fig.width=6,fig.height=6}
+source(PCA_FUN)
+
+gff_c<-PCAplot(Expr = dataMouseCortex$rna_expr,TimeExpr = dataMouseCortex$rna_expr$Time,
+        fits = dataMouseCortex$fits,fitted_full = fitted_CortexFullModel,
+        fitted_circcomp = fitted_circ,fitted_swcomp = fitted_sw,xlim = c(-110,100),ylim=c(-50,70),title="Cortex")
+```
+
+Time-course
+
+```{r}
+source(PCA_FUN)
+gff_c_ts<-PCAplotTimeCourse(Expr = dataMouseCortex$rna_expr,TimeExpr = dataMouseCortex$rna_expr$Time,
+        fits = dataMouseCortex$fits,fitted_full = fitted_CortexFullModel,
+        fitted_circcomp = fitted_circ,fitted_swcomp = fitted_sw)
+```
+
+```{r,fig.height=6,fig.width=5}
+(gff_c/gff_c_ts)+plot_layout(heights = c(3,1.2))
+```
+
+GO enrichment for PC1 using ranksum
+
+```{r}
+source(TOPGO_FUN)
+res.pca_Cortex<-GetPCA(Expr = dataMouseCortex$rna_expr,TimeExpr = dataMouseCortex$rna_expr$Time,
+        fits = dataMouseCortex$fits)
+Endf_CPC1<-ScoreEnrichment(res.pca_Cortex$var$contrib[,1],Score = "decreasing")
+Endf_CPC1$df[,c(1,2,6,7)]
+Endf_CPC1$plot
+
+fviz_screeplot(res.pca_Cortex)
+```
+
+parameters of PC1
+
+```{r}
+SWrcs<-GetSWrcMouse(dataMouseCortex$fits$Gene[dataMouseCortex$fits$BF>exp(1)],SWDMr(dataMouseCortex$SWdf,dataMouseCortex$rna_expr),dataMouseCortex$fits)
+```
+
+Amplitude Difference
+
+```{r}
+AmpDif<-AmplitdueDiffBetweenPC(res.pca_Cortex,dataMouseCortex$rna_expr)
+boxplot(AmpDif);mean(AmpDif$AmpPC1);mean(AmpDif$AmpPC2)
+```
+
+
+
+```{r,fig.width=8,fig.height=8}
+# source(PCA_FUN)
+# Plpa_CortexPC1<-PlotParams(res.pca_Cortex,SWrcs,data=dataMouseCortex,dataMouseCortex$fits,PC=1)
+# Plpa_CortexPC2<-PlotParams(res.pca,SWrcs,data=dataMouseCortex,dataMouseCortex$fits,PC=2)
+# (Plpa_CortexPC1$plot)/Plpa_CortexPC2$plot
+```
+
+```{r,fig.width=8,fig.height=6}
+source(PCA_FUN)
+Plpa_CortexPC1<-PlotParams2(res.pca_Cortex,SWrcs,data=dataMouseCortex,dataMouseCortex$fits,PC=1)
+Plpa_CortexPC2<-PlotParams2(res.pca_Cortex,SWrcs,data=dataMouseCortex,dataMouseCortex$fits,PC=2)
+
+((Plpa_CortexPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_CortexPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_CortexPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_CortexPC2$plot2+theme(plot.margin = margin(0,0,50,0)))
+```
+
+
+
+PC2
+
+```{r}
+source(TOPGO_FUN)
+Endf2_CPC2<-ScoreEnrichment(res.pca_Cortex$var$contrib[,2],Score = "decreasing")
+Endf2_CPC2$df
+Endf2_CPC2$plot
+```
+
+
+
+# PCA in the liver
+
+Load data
+
+```{r}
+dataMouseLiver<-LOADMOUSE(Tissue="Liver")
+```
+
+Load fitted data
+
+```{r}
+load(LIVERFITTED_RDATA)
+```
+
+```{r}
+SWrcsL<-GetSWrcMouse(dataMouseLiver$fits$Gene[dataMouseLiver$fits$BF>exp(1)],SWDMr(dataMouseLiver$SWdf,dataMouseLiver$rna_expr),dataMouseLiver$fits)
+```
+
+
+```{r,fig.width=6,fig.height=6}
+source(PCA_FUN)
+# PCAplot(Expr = dataMouseCortex$rna_expr,TimeExpr = dataMouseCortex$rna_expr$Time,
+#         fits = dataMouseCortex$fits,fitted_full = fitted_CortexFullModel,
+#         fitted_circcomp = fitted_circ,fitted_swcomp = fitted_sw,
+#         AddULeq=T,ylim = c(-75,100),xlim=c(-180,125))
+
+gff_l<-PCAplot(Expr = dataMouseLiver$rna_expr,TimeExpr = dataMouseLiver$rna_expr$Time,
+        fits = dataMouseLiver$fits,fitted_full = fitted_LiverFullModel,
+        fitted_circcomp = fitted_circ,fitted_swcomp = fitted_sw,xlim = c(-60,75),ylim=c(-60,50),title="Liver")
+```
+
+```{r}
+source(PCA_FUN)
+gff_l_ts<-PCAplotTimeCourse(Expr = dataMouseLiver$rna_expr,TimeExpr = dataMouseLiver$rna_expr$Time,
+        fits = dataMouseLiver$fits,fitted_full = fitted_LiverFullModel,
+        fitted_circcomp = fitted_circ,fitted_swcomp = fitted_sw)
+```
+
+```{r}
+(gff_l/gff_l_ts)+plot_layout(heights = c(3,1.2))
+```
+
+```{r}
+source(TOPGO_FUN)
+res.pca_Liver<-GetPCA(Expr = dataMouseLiver$rna_expr,TimeExpr = dataMouseLiver$rna_expr$Time,
+        fits = dataMouseLiver$fits)
+Endf_LPC1<-ScoreEnrichment(res.pca_Liver$var$contrib[,1],Score = "decreasing")
+Endf_LPC1$df
+Endf_LPC1$plot
+```
+
+```{r}
+PlotParams(res.pca_Liver,SWrcsL,data = dataMouseLiver,dataMouseLiver$fits,PC=1)
+```
+
+
+```{r}
+source(TOPGO_FUN)
+
+Endf2_LPC2<-ScoreEnrichment(res.pca_Liver$var$contrib[,2],Score = "decreasing")
+Endf2_LPC2$df
+Endf2_LPC2$plot
+```
+
+
+```{r}
+PlotParams(res.pca_Liver,SWrcsL,data=dataMouseLiver,dataMouseLiver$fits,PC=2)
+```
+
+```{r,fig.width=8,fig.height=6}
+source(PCA_FUN)
+Plpa_LiverPC1<-PlotParams2(res.pca_Liver,SWrcsL,data=dataMouseLiver,dataMouseLiver$fits,PC=1)
+Plpa_LiverPC2<-PlotParams2(res.pca_Liver,SWrcsL,data=dataMouseLiver,dataMouseLiver$fits,PC=2)
+
+((Plpa_LiverPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_LiverPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_LiverPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_LiverPC2$plot2+theme(plot.margin = margin(0,0,50,0)))
+```
+
+```{r}
+AmpDif<-AmplitdueDiffBetweenPC(res.pca_Liver,dataMouseLiver$rna_expr)
+boxplot(AmpDif);mean(AmpDif$AmpPC1);mean(AmpDif$AmpPC2)
+```
+
+# Human PCA
+
+Load data
+
+```{r}
+load(HUMANDATASET_RDATA)
+load(HUMANFITTED_RDATA)
+
+fits<-read.table(HUMANFITS,header=T,fill=T)
+fits<-fits[! duplicated(fits$ProbeName) & ! is.na(fits$BF) & fits$omega != 0 & is.finite(fits$tau),] # trouble if omega == 0
+rownames(fits)<-fits$ProbeName
+
+# ProbeID rhythmic
+SPID<-fits$ProbeName[fits$BF>exp(1)]
+```
+
+Impute missing data for PCA
+
+```{r}
+HT_Desyncfilt<-HT_Desync[,SPID]
+HT_Extfilt<-HT_Ext[,SPID]
+HT_Resfilt<-HT_Res[,SPID]
+```
+
+
+```{r}
+library(missMDA)
+res.comp_desync = imputePCA(HT_Desyncfilt,ncp=5,scale=T)
+res.comp_cr = imputePCA(rbind(HT_Extfilt,HT_Resfilt),ncp=5,scale=T)
+```
+
+
+```{r}
+FD_Expr<-res.comp_desync$completeObs
+CR_Expr<-res.comp_cr$completeObs
+```
+
+
+## FD
+
+
+```{r}
+source(PCA_FUN)
+gff_fd_sync<-PCAplot_Human(Expr=FD_Expr,
+  TimeExpr=HT_Desync$Time,
+  Dataset="Sync",
+  fits=fits,
+  fitted_full=Preds_Desync,
+  fitted_circcomp=Preds_Desync_circ,
+  fitted_swcomp=Preds_Desync_sw,
+  linedashedHex="11",
+  xlim=c(-80,80),#-80,80
+  ylim=c(-35,30),#-30,30
+  SWdistr = MeanSWdf,title="Blood FD in-phase")
+
+gff_fd_desync<-PCAplot_Human(Expr=FD_Expr,
+  TimeExpr=HT_Desync$Time,
+  Dataset="Desync",
+  fits=fits,
+  fitted_full=Preds_Desync,
+  fitted_circcomp=Preds_Desync_circ,
+  fitted_swcomp=Preds_Desync_sw,
+  linedashedHex="11",
+  xlim=c(-80,80),
+  ylim=c(-35,30),
+  SWdistr = MeanSWdf,title="Blood FD anti-phase")
+```
+
+```{r}
+res.pca_Desync<-GetPCA(Expr = FD_Expr,TimeExpr = HT_Desync$Time,
+        fits = fits)
+
+geneList<-sort(res.pca_Desync$var$contrib[,1],decreasing = T)
+names(geneList)<-res.pca_Desync$var$Genes[names(geneList)]
+geneList<-geneList[! duplicated(names(geneList))]
+
+
+Endf_DPC1<-ScoreEnrichment(geneList,Score = "decreasing",data="Human")
+Endf_DPC1$df
+Endf_DPC1$plot
+```
+
+```{r}
+#SWrcsH<-GetSWrcHuman(fits$ProbeName[fits$BF>exp(1)],MeanSWdf,HT_Desync,fits)
+
+library(parallel)
+library(doSNOW)
+cl <- makeCluster(NCORES)
+#clusterExport(cl)
+registerDoSNOW(cl)
+
+# Fit for all Genes
+SWrcsH <- foreach(i =fits$ProbeName[fits$BF>exp(1)],.packages=c("SWDMr"),.combine="c") %dopar% {
+  aa<-GetSWrcHuman(i,SWdf_human=MeanSWdf,HT_Desync=HT_Desync,fits)
+  return(aa)
+}
+stopCluster(cl)
+```
+
+
+```{r,fig.width=8,fig.height=6}
+source(PCA_FUN)
+#PlotParamsH(res.pca_Desync,SWrcsH,fits,PC=1)
+Plpa_DesyncPC1<-PlotParamsH2(res.pca_Desync,SWrcsH,fits,PC=1)
+Plpa_DesyncPC2<-PlotParamsH2(res.pca_Desync,SWrcsH,fits,PC=2)
+
+((Plpa_DesyncPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_DesyncPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_DesyncPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_DesyncPC2$plot2+theme(plot.margin = margin(0,0,50,0)))
+```
+
+
+```{r}
+geneList<-sort(res.pca_Desync$var$contrib[,2],decreasing = T)
+names(geneList)<-res.pca_Desync$var$Genes[names(geneList)]
+geneList<-geneList[! duplicated(names(geneList))]
+
+
+Endf_DPC2<-ScoreEnrichment(geneList,Score = "decreasing",data="Human")
+Endf_DPC2$df
+Endf_DPC2$plot
+```
+
+```{r}
+PlotParamsH(res.pca_Desync,SWrcsH,fits,PC=2)
+```
+
+
+```{r}
+# ggsave(paste(FIGUREDIR,"PCA_Blood_FD.pdf",sep=""), width = 160, height = 120, units = "mm",plot = ((gff$pca_plot|gff2$pca_plot)/gff$TimeCoursePlot)+plot_layout(heights = c(3,1.2)))
+```
+
+
+```{r}
+AmpDif<-AmplitdueDiffBetweenPC(res.pca_Desync,HT_Desync,human=T)
+boxplot(AmpDif);mean(AmpDif$AmpPC1);mean(AmpDif$AmpPC2)
+```
+
+
+## CR
+
+```{r}
+source(PCA_FUN)
+gff_cr_ctr<-PCAplot_Human(Expr=CR_Expr,
+  TimeExpr=c(HT_Ext$Time,HT_Res$Time),
+  Dataset="Ext",
+  fits=fits,
+  fitted_full=Preds_Ext,
+  fitted_circcomp=Preds_Ext_circ,
+  fitted_swcomp=Preds_Ext_sw,
+  linedashedHex="11",
+  xlim=c(-70,90),#-80,80
+  ylim=c(-50,45),#-30,30
+  SWdistr = MeanSWdfExt,title="Blood 10h sleep + CR")
+
+gff_cr_res<-PCAplot_Human(Expr=CR_Expr,
+  TimeExpr=c(HT_Ext$Time,HT_Res$Time),
+  Dataset="Res",
+  fits=fits,
+  fitted_full=Preds_Res,
+  fitted_circcomp=Preds_Res_circ,
+  fitted_swcomp=Preds_Res_sw,
+  linedashedHex="11",
+  xlim=c(-70,90),
+  ylim=c(-50,45),
+  SWdistr = MeanSWdfRest,title="Blood 6h sleep + CR")
+```
+
+
+```{r}
+# ggsave(paste(FIGUREDIR,"PCA_Blood_CR.pdf",sep=""), width = 160, height = 120, units = "mm",plot = ((gff$pca_plot/gff$TimeCoursePlot)+plot_layout(heights = c(3,1.2))|(gff2$pca_plot/gff2$TimeCoursePlot)+plot_layout(heights = c(3,1.2))))
+```
+
+```{r}
+res.pca_CR<-GetPCA(Expr = CR_Expr,TimeExpr = c(HT_Ext$Time,HT_Res$Time),
+        fits = fits)
+
+geneList<-sort(res.pca_CR$var$contrib[,1],decreasing = T)
+names(geneList)<-res.pca_CR$var$Genes[names(geneList)]
+geneList<-geneList[! duplicated(names(geneList))]
+
+
+Endf_CRPC1<-ScoreEnrichment(geneList,Score = "decreasing",data="Human")
+Endf_CRPC1$df
+Endf_CRPC1$plot
+```
+
+
+```{r,fig.width=12,fig.height=10}
+source(PCA_FUN)
+#PlotParamsH(res.pca_Desync,SWrcsH,fits,PC=1)
+Plpa_CRPC1<-PlotParamsH2(res.pca_CR,SWrcsH,fits,PC=1)
+Plpa_CRPC2<-PlotParamsH2(res.pca_CR,SWrcsH,fits,PC=2)
+
+((Plpa_CRPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_CRPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_CRPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_CRPC2$plot2+theme(plot.margin = margin(0,0,50,0)))
+```
+
+
+
+
+```{r}
+geneList<-sort(res.pca_CR$var$contrib[,2],decreasing = T)
+names(geneList)<-res.pca_CR$var$Genes[names(geneList)]
+geneList<-geneList[! duplicated(names(geneList))]
+
+
+Endf_CRPC2<-ScoreEnrichment(geneList,Score = "decreasing",data="Human")
+Endf_CRPC2$df
+Endf_CRPC2$plot
+```
+
+
+
+
+```{r}
+# n<-names(tail(sort(table(c(Endf_CPC1$df$GO.ID,Endf2_CPC2$df$GO.ID,Endf_LPC1$df$GO.ID,Endf2_LPCs2$df$GO.ID,Endf_DPC1$df$GO.ID,Endf_DPC2$df$GO.ID,Endf_CRPC1$df$GO.ID,Endf_CRPC2$df$GO.ID))),10))
+# 
+# Endf_CPC1$dfAll[Endf_CPC1$dfAll$GO.ID %in% n,]
+# Endf_DPC2$dfAll[Endf_DPC2$dfAll$GO.ID %in% n,]
+```
+
+
+# Fig
+
+```{r,fig.width=8,fig.height=10}
+layout <- '
+AEG
+BLL
+CHJ
+DIK
+'
+
+gf<-wrap_plots(A=gff_c,
+               B=gff_c_ts, #+theme(plot.margin = margin(2,0,0,0))
+               C=gff_l,
+               D=gff_l_ts,
+               E=gff_fd_sync$pca_plot,
+               L=gff_fd_sync$TimeCoursePlot,
+               G=gff_fd_desync$pca_plot,
+               H=gff_cr_ctr$pca_plot,
+               J=gff_cr_res$pca_plot,
+               I=gff_cr_ctr$TimeCoursePlot,
+               K=gff_cr_res$TimeCoursePlot, design = layout,heights = c(3,1.2,3,1.2))
+gf
+```
+
+
+
+
+```{r}
+ggsave(paste(FIGUREDIR,"PCA.pdf",sep=""), width = 250, height = 250, units = "mm",plot =gf)
+```
+
+
+# Supplementary Fig
+
+```{r}
+fviz_screeplot(res.pca_Cortex)
+
+subf<-((Plpa_CortexPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_CortexPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_CortexPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_CortexPC2$plot2+theme(plot.margin = margin(0,0,50,0)))
+
+Endf2_CPC2$plot
+
+Endf_CPC1$plot
+```
+
+
+```{r,fig.width=12,fig.height=8}
+layout <- '
+ACE
+BCE
+DCE
+'
+subf<-((Plpa_CortexPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_CortexPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_CortexPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_CortexPC2$plot2+theme(legend.position = "none"))
+legend1<-cowplot::get_legend(Plpa_CortexPC2$plot2+theme_bw())
+legend2<-cowplot::get_legend(Endf2_CPC2$plot+theme_bw())
+
+gsf_cortex<-wrap_plots(A=fviz_screeplot(res.pca_Cortex)+ylab("% var. explained")+ggtitle("Cortex")+xlab("PC")+theme_classic(),
+                C=subf,
+                B=Endf_CPC1$plot+ggtitle("GO enrich. PC1")+theme(legend.position = "none"),
+                D=Endf2_CPC2$plot+ggtitle("GO enrich. PC2")+theme(legend.position = "none"),
+                E=legend1,
+                design = layout,widths = c(1,1.5,.3),heights = c(.5,1,1))+plot_annotation(title="Cortex")
+gsf_cortex
+
+
+
+
+
+subf<-((Plpa_LiverPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_LiverPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_LiverPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_LiverPC2$plot2+theme(legend.position = "none"))
+gsf_liver<-wrap_plots(A=fviz_screeplot(res.pca_Liver)+ylab("% var. explained")+ggtitle("Liver")+xlab("PC")+theme_classic(),
+                C=subf,
+                B=Endf_LPC1$plot+ggtitle("GO enrich. PC1")+theme(legend.position = "none"),
+                D=Endf2_LPC2$plot+ggtitle("GO enrich. PC2")+theme(legend.position = "none"),
+                E=legend1,
+                design = layout,widths = c(1,1.5,.3),heights = c(.5,1,1))+plot_annotation(title="Liver")
+gsf_liver
+
+
+subf<-((Plpa_DesyncPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_DesyncPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_DesyncPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_DesyncPC2$plot2+theme(legend.position = "none"))
+gsf_Desync<-wrap_plots(A=fviz_screeplot(res.pca_Desync)+ylab("% var. explained")+ggtitle("Blood F.D.")+xlab("PC")+theme_classic(),
+                C=subf,
+                B=Endf_DPC1$plot+ggtitle("GO enrich. PC1")+theme(legend.position = "none"),
+                D=Endf_DPC2$plot+ggtitle("GO enrich. PC2")+theme(legend.position = "none"),
+                E=legend1,
+                design = layout,widths = c(1,1.5,.3),heights = c(.5,1,1))+plot_annotation(title="Blood F.D.")
+gsf_Desync
+
+
+subf<-((Plpa_CRPC1$plot1+theme(legend.position = "none")+ggtitle("PC1")) / (Plpa_CRPC1$plot2+theme(legend.position = "none"))) | 
+  ((Plpa_CRPC2$plot1+theme(legend.position = "none")+ggtitle("PC2")) / Plpa_CRPC2$plot2+theme(legend.position = "none"))
+gsf_CR<-wrap_plots(A=fviz_screeplot(res.pca_CR)+ylab("% var. explained")+ggtitle("Blood C.R.")+xlab("PC")+theme_classic(),
+                C=subf,
+                B=Endf_CRPC1$plot+ggtitle("GO enrich. PC1")+theme(legend.position = "none"),
+                D=Endf_CRPC2$plot+ggtitle("GO enrich. PC2")+theme(legend.position = "none"),
+                E=legend1,
+                design = layout,widths = c(1,1.5,.3),heights = c(.5,1,1))+plot_annotation(title="Blood C.R.")
+gsf_CR
+```
+
+
+```{r,fig.width=25,fig.height=15}
+gff<-(gsf_cortex | gsf_liver) / (gsf_Desync | gsf_CR)
+ggsave(paste(FIGUREDIR,"PCA_Sup.pdf",sep=""), width = 600, height = 400, units = "mm",plot =gff)
+```
+
+```{r}
+tail(sort(table(c(Endf_CRPC2$df$GO.ID,Endf_CRPC1$df$GO.ID,Endf_CPC1$df$GO.ID,Endf2_CPC2$df$GO.ID,Endf_LPC1$df$GO.ID,Endf2_LPC2$df$GO.ID,Endf_DPC1$df$GO.ID,Endf_DPC2$df$GO.ID))))
+```
+
+
+
+```{r,eval=F}
+Expr<-FD_Expr
+TimeExpr<-HT_Desync$Time
+Dataset="Sync"
+fits<-fits
+fitted_full<-Preds_Desync
+fitted_circcomp<-Preds_Desync_circ
+fitted_swcomp<-Preds_Desync_sw
+linedashedHex="11"
+xlim=c(-120,100)
+ylim=c(-60,60)
+SWdistr = MeanSWdf
+title="Blood FD in-phase"
+
+Expr=CR_Expr
+TimeExpr=c(HT_Ext$Time,HT_Res$Time)
+Dataset="Ext"
+fits=fits
+fitted_full=Preds_Ext
+fitted_circcomp=Preds_Ext_circ
+fitted_swcomp=Preds_Ext_sw
+linedashedHex="11"
+xlim=c(-70,90)#-80,80
+ylim=c(-50,45)#-30,30
+SWdistr = MeanSWdfExt
+title="Blood 10h sleep + CR"
+```
+
+
+

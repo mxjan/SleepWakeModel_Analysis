@@ -1,0 +1,178 @@
+---
+title: "Compare FD results with Archer2014"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+
+```{r}
+library(patchwork)
+source("../FileLocation.R")
+source(TEMPLATE_FUN)
+source(COLORFUN)
+source(GENERAL_FUN)
+source(LINEARPLOT_FUN)
+library(parallel)
+library(doSNOW)
+colorCode<-ColorCode()
+NCORES<-8
+```
+
+Read categorization by Carla
+
+```{r}
+carla<-read.table(ARCHER2014FIG6,sep=",",header=T)
+carla<-carla[!duplicated(carla$X),]
+rownames(carla)<-carla$X
+```
+
+Human fits
+
+```{r}
+load(HUMANDATASET_RDATA)
+fits<-read.table(HUMANFITS,header=T,fill=T)
+fits<-fits[! duplicated(fits$ProbeName) & ! is.na(fits$BF) & fits$omega != 0,] # trouble if omega == 0
+rownames(fits)<-fits$ProbeName
+```
+
+SWrc human
+
+```{r}
+cl <- makeCluster(NCORES)
+#clusterExport(cl)
+registerDoSNOW(cl)
+
+# Fit for all Genes
+SWrcsH <- foreach(i =fits$ProbeName[fits$BF>exp(1)],.packages=c("SWDMr"),.combine="c") %dopar% {
+  aa<-GetSWrcHuman(i,SWdf_human=MeanSWdf,HT_Desync=HT_Desync,fits)
+  return(aa)
+}
+
+ZetaH<-foreach(i =fits$ProbeName[fits$BF>exp(1)],.packages=c("SWDMr"),.combine="c") %dopar% {
+  aa<-GetZeta(i,fits)
+  return(aa)
+}
+
+stopCluster(cl)
+```
+
+Common Probes
+
+```{r}
+common<-carla$X[carla$R2 > 0.6 & ! is.na(carla$R2) & carla$X %in% names(SWrcsH) ]
+SWrcsH<-SWrcsH[common]
+carlaf<-carla[common,]
+```
+
+Circadian, SW or C+SW driven in Archer 2014
+
+```{r}
+Cd_carla<-rownames(carlaf)[sign(carlaf$mel_95CImin) == sign(carlaf$mel_95CImax) & 
+                              sign(carlaf$sleep_95CImin) != sign(carlaf$sleep_95CImax)]
+
+SWd_carla<-rownames(carlaf)[sign(carlaf$mel_95CImin) != sign(carlaf$mel_95CImax) & 
+                             sign(carlaf$sleep_95CImin) == sign(carlaf$sleep_95CImax)]
+
+CSWd_carla<-rownames(carlaf)[sign(carlaf$mel_95CImin) == sign(carlaf$mel_95CImax) & 
+                               sign(carlaf$sleep_95CImin) == sign(carlaf$sleep_95CImax)]
+```
+
+
+```{r}
+dd<-cbind.data.frame(Zeta=log10(ZetaH[Cd_carla]),SWrc=SWrcsH[Cd_carla],Type="Circadian")
+gg1<-ggplot(aes(x=SWrc,y=Zeta),data=dd)+geom_point(color=colorCode[["Blood"]])+scale_y_continuous(limits=c(-2,2))+ylab(expression(paste(log10,zeta)))+scale_x_continuous(limits=c(0,1))+theme_classic()+ggtitle("Probes in phase with melatonin\nin Archer et al.")+
+  annotate("text",label=substitute(paste(italic('SERPINB9'))),y=log10(ZetaH["A_24_P295010"]),x=SWrcsH["A_24_P295010"],hjust=0,vjust=0,color=colorCode[["Blood"]])+
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1))
+gg1
+
+dd<-cbind.data.frame(Zeta=log10(ZetaH[SWd_carla]),SWrc=SWrcsH[SWd_carla],Type="SW")
+gg2<-ggplot(aes(x=SWrc,y=Zeta),data=dd)+geom_point(color=colorCode[["Blood"]])+scale_y_continuous(limits=c(-2,2))+ylab(expression(paste(log10,zeta)))+scale_x_continuous(limits=c(0,1))+theme_classic()+ggtitle("Probes in phase with sleep-wake cycle\nin Archer et al.")+
+  annotate("text",label=substitute(paste(italic('ZNF283'))),y=log10(ZetaH["A_23_P78922"]),x=SWrcsH["A_23_P78922"],hjust=1,vjust=0,color=colorCode[["Blood"]])+
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1))
+gg2
+
+
+dd<-cbind.data.frame(Zeta=log10(ZetaH[CSWd_carla]),SWrc=SWrcsH[CSWd_carla],Type="Circadian+SW")
+gg3<-ggplot(aes(x=SWrc,y=Zeta),data=dd)+geom_point(color=colorCode[["Blood"]])+scale_y_continuous(limits=c(-2,2))+ylab(expression(paste(log10,zeta)))+scale_x_continuous(limits=c(0,1))+theme_classic()+ggtitle("Probes in phase with sleep-wake cycle\nand melatonin in Archer et al.")+
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1))
+gg3
+
+gg1/gg2/gg3
+
+# 
+# plot(y=log10(ZetaH[Cd_carla]),x=SWrcsH[Cd_carla],xlab="SWrc",xlim=c(0,1),
+#      main="Probes enhanced/suppressed by melatonin in Archer et al.",pch=19,ylim=c(-4,2),ylab=expression(zeta),col=colorCode[["Blood"]])
+```
+
+Example expression
+
+
+
+```{r}
+dataHuman<-LOADHUMAN()
+```
+
+
+```{r,fig.width=8,fig.height=3}
+SERPINB9_sync<-LinearPlot(ProbeGene = "A_24_P295010",Dataset = "Desync",DaysShows = c(2,3),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(42,72),ylim=c(10.8,11.4))+ggtitle("In-phase")+ylab("Log2 probe intensity")
+
+SERPINB9_desync<-LinearPlot(ProbeGene = "A_24_P295010",Dataset = "Desync",DaysShows = c(5,6),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+
+  theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(114,144),ylim=c(10.8,11.4))+ggtitle("anti-phase")
+
+
+SERPINB9_ctr<-LinearPlot(ProbeGene = "A_24_P295010",Dataset = "Ctr",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=c(10.8,11.4)-0.45)+ggtitle("10h sleep + CR")+ylab("Log2 probe intensity")
+
+SERPINB9_res<-LinearPlot(ProbeGene = "A_24_P295010",Dataset = "Res",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=c(10.8,11.4)-0.45)+ggtitle("6h sleep + CR")
+
+
+ggF<-SERPINB9_sync |
+RemoveYaxis(SERPINB9_desync) |
+(SERPINB9_ctr) |
+RemoveYaxis(SERPINB9_res)
+
+ggF
+```
+```{r,fig.width=8,fig.height=3}
+ZNF283_sync<-LinearPlot(ProbeGene = "A_23_P78922",Dataset = "Desync",DaysShows = c(2,3),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(42,72),ylim=c(7.9,8.6))+ggtitle("In-phase")+ylab("Log2 probe intensity")
+
+ZNF283_desync<-LinearPlot(ProbeGene = "A_23_P78922",Dataset = "Desync",DaysShows = c(5,6),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+
+  theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(114,144),ylim=c(7.9,8.6))+ggtitle("anti-phase")
+
+
+ZNF283_ctr<-LinearPlot(ProbeGene = "A_23_P78922",Dataset = "Ctr",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=c(7.9,8.6)+0.372)+ggtitle("10h sleep + CR")+ylab("Log2 probe intensity")
+
+ZNF283_res<-LinearPlot(ProbeGene = "A_23_P78922",Dataset = "Res",DaysShows = c(9,10),MeanPointSize = 3,npretty = 3,ModelFitLine = 1,AddSleepWake = F,AddASkeldonSol = T)+theme(plot.margin = margin(0,10,0,0))+coord_cartesian(xlim  = c(202,240),ylim=c(7.9,8.6)+0.372)+ggtitle("6h sleep + CR")
+
+
+ggF2<-ZNF283_sync |
+RemoveYaxis(ZNF283_desync) |
+(ZNF283_ctr) |
+RemoveYaxis(ZNF283_res)
+
+ggF2
+```
+
+
+```{r}
+ggsave(paste(FIGUREDIR,"SWrc_vs_Archer2014.pdf",sep=""), width = 200*1.8, height = 120*1.8, units = "mm",plot = ((gg1/gg2/gg3)|(plot_spacer()/ggF/plot_spacer()/ggF2)+plot_layout(heights = c(1,8,1,8)))+plot_layout(widths = c(1,2)))
+
+```
+

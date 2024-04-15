@@ -1,0 +1,506 @@
+---
+title: "Figure 1. Intro DDHO"
+author: "M. Jan, P. Franken"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    fig_caption: yes
+    highlight: pygments
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_depth: 4
+    rows.print: 6
+    toc_float: yes
+  pdf_document:
+    fig_caption: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+Show some examples of the model without forces or with circadian, sleep-wake forces
+
+# LIBS
+
+```{r}
+library(SWDMr)
+library(ggplot2)
+library(patchwork)
+library(cowplot)
+
+source("../FileLocation.R")
+source(COLORFUN)
+source(TEMPLATE_FUN)
+colorcode<-ColorCode()
+```
+
+
+
+# Functions
+
+Some functions to plot
+
+```{r}
+PlotOscillatorNoForce<-function(out,colorcode,ylim=NULL,noy=F,noxlab=F,codcol="Modelfit"){
+  out<-as.data.frame(out)
+  
+  gg<-ggplot(aes(x=time,y=y1),data=out)
+  gg<-gg+geom_hline(yintercept = 0,linetype="solid", color = "grey75")
+  gg<-gg+geom_path(color=colorcode[[codcol]],size=.5)
+  gg <- gg  + ylab("Position") + xlab("Time")
+  if (noxlab==T){
+    gg <- RemoveXlab(gg)
+  }
+  gg <- gg + scale_x_continuous(limits = c(0, 96),breaks = seq(0,96,by=48))
+  gg <- gg + theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")
+  if (! is.null(ylim)){
+    gg<-gg + ylim(ylim)
+  }
+  if (noy==T){
+    gg<-RemoveYaxis(gg)
+  }
+
+  return(gg)
+}
+
+PlotSlopeField<-function(model,param,colorcode,seqPos,seqSpeed,arrowlength = 5,ylim=NULL,noy=F,noxlab=F){
+  out<-SWDMrFit(model,param)
+  out<-as.data.frame(out)
+  
+  gg<-ggplot(aes(x=y2,y=y1),data=out)
+  gg<-gg+geom_hline(yintercept = 0,linetype="dashed", color = "grey75")+geom_vline(xintercept = 0,linetype="dashed", color = "grey75")
+  gg<-gg+geom_path(color=colorcode[["Modelfit"]],size=1)
+  gg <- gg + theme(panel.background = element_blank(),panel.border = element_rect(fill=NA),legend.position = "none")
+  gg <- gg + ylab("Position") + xlab("Velocity")
+  if (noxlab==T){
+    gg <- RemoveXlab(gg)
+  }
+  
+  #gg<-gg+annotate("path",y=out$y1[seq(60,80)],x=out$y2[seq(60,80)],arrow = arrow(type = "closed",length = unit(0.5, "cm")),color="black")
+  
+  for (i in seqPos){ # .05
+    for (j in seqSpeed){ # .01
+      
+      model<-SetYinitMode(model,mode = "Fixed",values = c(i,j))
+      out<-SWDMrFit(model,param)
+      diffspeed<-c(0,diff(out$y2))
+      v1<-1
+      v2<-1+arrowlength
+      gg<-gg+annotate("path",y=out$y1[(v1):(v2)],x=out$y2[(v1):(v2)],arrow = arrow(type = "closed", angle = 15,length = unit(0.15, "cm")),color="grey50")
+    }
+  }
+  
+  if (! is.null(ylim)){
+    gg<-gg + ylim(ylim)
+  }
+  if (noy==T){
+    gg<-RemoveYaxis(gg)
+  }
+  
+  
+  gg <- gg + scale_x_continuous(breaks=scales::pretty_breaks(3))
+  
+  return(gg)
+}
+```
+
+
+# Example parameters
+
+Set parameters for 2 examples: 
+
+-   Example 1 is underdamped
+-   Example 2 is overdamped
+
+
+Block function that represent sleep-wake
+
+```{r}
+BlockForcedf<-cbind.data.frame(Time=seq(.1,144,by=.1),BlockForce=rep(rep(c(-1,1),each=120),6))
+# Perturbation
+BlockForcedf$BlockForce[BlockForcedf$Time>24 & BlockForcedf$Time<=30]<- 1
+```
+
+Create swdmr object
+
+```{r}
+swdmr<-SWDMr(SWdist=BlockForcedf, Gexp=cbind.data.frame(Time=1,Gene=1))
+```
+
+Set gamma and omega
+
+```{r}
+gammaOverD<-1.5
+gammaUnderD<-0.05
+omega<-0.35
+```
+
+Example 1
+
+```{r}
+model<-initDDHOmodel(swdmr, VarExp = "Gene", UseDampingRatio = F)
+model<-SetYinitMode(model,mode = "Fixed",c(3,0))
+model<-FixIntercept(model,0)
+model
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega)
+out<-SWDMrFit(model,Pex1)
+p1<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T)
+p1
+```
+
+Example 2
+
+```{r}
+Pex12<-c(loggamma =log(gammaOverD),omega=omega)
+out<-SWDMrFit(model,Pex12)
+p12<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T)
+p12
+```
+
+Example time constant
+
+```{r}
+tau1<- -1/ (-gammaOverD/2 + sqrt( (gammaOverD/2)^2-omega^2))
+p12<-p12+annotate("path",x=seq(0,96),y=3*exp(-seq(0,96)/tau1),col="red",linetype="22")
+
+tau2<- 2/gammaUnderD
+p1<-p1+annotate("path",x=seq(0,96),y=3*exp(-seq(0,96)/tau2),col="red",linetype="22")+annotate("path",x=seq(0,96),y=-3*exp(-seq(0,96)/tau2),col="red",linetype="22")
+```
+
+
+
+Example including circadian and sleep-wake force
+
+```{r}
+modelF<-AddSinF(model,FixPer=24)
+modelF<-SetYinitMode(modelF,mode = "Intercept_0")
+modelF<-ReplicateDrivingForce(modelF,c(0,24),10)
+
+modelF2<-AddForce(model,"BlockForce")
+modelF2<-SetYinitMode(modelF2,mode = "Fixed",c(0,0))
+modelF2<-ReplicateDrivingForce(modelF2,c(0,24),10)
+
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,AmpSin=1,PhiSin=pi)
+out<-SWDMrFit(modelF,Pex1)
+p21<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,BlockForce=1)
+out<-SWDMrFit(modelF2,Pex1)
+p21W<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")#p21+annotate("path",x=out$time,y=out$y1,col=colorcode[["SWforce"]])
+
+
+
+
+Pex14<-c(loggamma =log(gammaOverD),omega=omega,AmpSin=1,PhiSin=pi)
+out<-SWDMrFit(modelF,Pex14)
+p214<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+Pex14<-c(loggamma =log(gammaOverD),omega=omega,BlockForce=1)
+out<-SWDMrFit(modelF2,Pex14)
+#p214<-p214+annotate("path",x=out$time,y=out$y1,col=colorcode[["SWforce"]])
+p214W<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+
+
+
+p21<-RemoveXaxis(p21)
+p214<-RemoveXaxis(p214)
+
+(p21/p214) | (p21W/p214W) 
+```
+
+
+# Force plot
+
+```{r}
+ggF<-ggplot(aes(Time,Force),data=cbind.data.frame(Time=seq(.1,96,by=.1),Force=sin(2*pi/24*seq(.1,96,by=.1)+pi)))
+ggF<-ggF + geom_path(col=colorcode[["SCNforce"]],size=1)
+ggF <- ggF +  theme(panel.background = element_blank(),panel.border = element_blank(),legend.position = "none",axis.line = element_line(colour = "black"))+ ylim(-1.5,1.5)
+ggF <- ggF +  scale_x_continuous(breaks=seq(0,96,by=12))
+ggF<-RemoveXlab(ggF)
+
+ggF2<-ggplot(aes(Time,BlockForce),data=BlockForcedf[BlockForcedf$Time<=96,])
+ggF2<-ggF2 + geom_path(col=colorcode[["SWforce"]],size=1)
+ggF2 <- ggF2 +  theme(panel.background = element_blank(),panel.border = element_blank(),legend.position = "none",axis.line = element_line(colour = "black")) + ylim(-1.5,1.5)
+ggF2 <- ggF2 +  scale_x_continuous(breaks=seq(0,96,by=12))
+```
+
+
+```{r}
+modelF3<-AddSinF(model,FixPer=24)
+modelF3<-AddForce(modelF3,"BlockForce")
+modelF3<-SetYinitMode(modelF3,mode = "Intercept_0")
+modelF3<-ReplicateDrivingForce(modelF3,c(0,24),10)
+
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,AmpSin=1,PhiSin=pi,BlockForce=1)
+out<-SWDMrFit(modelF3,Pex1,method = "Solve");out$y1<-out$y1[-1];out$time<-out$time[-1];out$y2<-out$y2[-1]
+
+p3<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+p3<-p3+annotate("path",x=out$time,y=out$circ_sol,col=colorcode[["SCNforce"]],linetype="solid")
+p3<-p3+annotate("path",x=out$time,y=out$SW_response+out$trans_sol,col=colorcode[["SWforce"]],linetype="solid")
+p3
+
+
+Pex1<-c(loggamma =log(gammaOverD),omega=omega,AmpSin=1,PhiSin=pi,BlockForce=1)
+out<-SWDMrFit(modelF3,Pex1,method = "Solve");out$y1<-out$y1[-1];out$time<-out$time[-1];out$y2<-out$y2[-1]
+
+p4<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+p4<-p4+annotate("path",x=out$time,y=out$circ_sol,col=colorcode[["SCNforce"]],linetype="solid")
+p4<-p4+annotate("path",x=out$time,y=out$SW_response+out$trans_sol,col=colorcode[["SWforce"]],linetype="solid")
+p4
+
+p3/p4
+```
+
+
+
+
+```{r}
+p21<-p21+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p214<-p214+theme(axis.title = element_blank())
+p21W<-p21W+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p214W<-p214W+theme(axis.title = element_blank())
+ggF2<-ggF2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+ggF<-ggF+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p3<-p3+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p4<-p4+theme(axis.title = element_blank())
+
+
+p1<-p1+ylab(bquote(atop(paste("",italic("Gene X")),paste("[",zeta," < 1]"))))
+p12<-p12+ylab(bquote(atop(paste("",italic("Gene Y")),paste("[",zeta," > 1]"))))
+
+layout<-'
+#AB#
+CEGI
+DFHJ
+'
+
+ggF<-ggF+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+ggF2<-ggF2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p21<-p21+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p214<-p214+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p21W<-p21W+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p214W<-p214W+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p3<-p3+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p4<-p4+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+
+ggF2<-ggF2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p21W<-p21W+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p214W<-p214W+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p3<-p3+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p4<-p4+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+
+p12<-p12+annotate("text",x= 72, y= 2.5,label=substitute(paste(gamma," = 1.5")),size=2)
+p12<-p12+annotate("text",x= 72, y= 2,label=substitute(paste(omega[0]," = 0.35")),size=2)
+p12<-p12+annotate("text",x=72,y=.5,label=substitute(paste(tau," = 11.5")),col="red",size=2)
+
+p1<-p1+annotate("text",x= 72, y= 2.5,label=substitute(paste(gamma," = 0.05",)),size=2)
+p1<-p1+annotate("text",x= 72, y= 1.5,label=substitute(paste(omega[0]," = 0.35")),size=2)
+p1<-p1+annotate("text",x=72,y=-2,label=substitute(paste(tau," = 40.0")),col="red",size=2)
+
+
+# p3<-p3 + geom_hline(yintercept = c(-1/omega^2,1/omega^2),color="red",linetype="22")
+# p4<-p4 + geom_hline(yintercept = c(-1/omega^2,1/omega^2),color="red",linetype="22")
+
+pF<-wrap_plots(A = ggF, B=ggF2,C=p1,D=p12,E=p21,"F"=p214,G=p21W,H=p214W,I=p3,J=p4, design = layout,heights = c(0.5,1,1),widths = c(0.5,0.5,0.5,1))
+pF
+#ggsave(paste(FIGUREDIR,"ExampleModel.pdf",sep=""), width = 185, height = 75, units = "mm",plot = pF)
+```
+
+
+
+
+
+# Example parameters 2 (Higher omega)
+
+Set parameters for 2 examples: 
+
+-   Example 1 is underdamped
+-   Example 2 is overdamped
+
+
+
+Set gamma and omega
+
+```{r}
+gammaOverD<-1.5
+gammaUnderD<-0.05
+omega<-0.13
+```
+
+Example 1
+
+```{r}
+model<-initDDHOmodel(swdmr, VarExp = "Gene", UseDampingRatio = F)
+model<-SetYinitMode(model,mode = "Fixed",c(3,0))
+model<-FixIntercept(model,0)
+model
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega)
+out<-SWDMrFit(model,Pex1)
+p1Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T)
+p1Ex2
+```
+
+Example 2
+
+```{r}
+Pex12<-c(loggamma =log(gammaOverD),omega=omega)
+out<-SWDMrFit(model,Pex12)
+p12Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T)
+p12Ex2
+```
+
+Example time constant
+
+```{r}
+tau3<- -1/ (-gammaOverD/2 + sqrt( (gammaOverD/2)^2-omega^2))
+p12Ex2<-p12Ex2+annotate("path",x=seq(0,96),y=3*exp(-seq(0,96)/tau3),col="red",linetype="22")
+
+tau4<- 2/gammaUnderD
+p1Ex2<-p1Ex2+annotate("path",x=seq(0,96),y=3*exp(-seq(0,96)/tau4),col="red",linetype="22")+annotate("path",x=seq(0,96),y=-3*exp(-seq(0,96)/tau4),col="red",linetype="22")
+```
+
+
+
+Example including circadian and sleep-wake force
+
+```{r}
+modelF<-AddSinF(model,FixPer=24)
+modelF<-SetYinitMode(modelF,mode = "Intercept_0")
+modelF<-ReplicateDrivingForce(modelF,c(0,24),10)
+
+modelF2<-AddForce(model,"BlockForce")
+modelF2<-SetYinitMode(modelF2,mode = "Fixed",c(0,0))
+modelF2<-ReplicateDrivingForce(modelF2,c(0,24),10)
+
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,AmpSin=1,PhiSin=pi)
+out<-SWDMrFit(modelF,Pex1)
+p21Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,BlockForce=1)
+out<-SWDMrFit(modelF2,Pex1)
+p21WEx2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")#p21+annotate("path",x=out$time,y=out$y1,col=colorcode[["SWforce"]])
+
+
+
+
+Pex14<-c(loggamma =log(gammaOverD),omega=omega,AmpSin=1,PhiSin=pi)
+out<-SWDMrFit(modelF,Pex14)
+p214Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+Pex14<-c(loggamma =log(gammaOverD),omega=omega,BlockForce=1)
+out<-SWDMrFit(modelF2,Pex14)
+#p214<-p214+annotate("path",x=out$time,y=out$y1,col=colorcode[["SWforce"]])
+p214WEx2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+
+
+
+p21Ex2<-RemoveXaxis(p21Ex2)
+#☻p214Ex2<-RemoveXaxis(p214Ex2)
+
+(p21Ex2/p214Ex2) | (p21WEx2/p214WEx2) 
+```
+
+
+
+```{r}
+modelF3<-AddSinF(model,FixPer=24)
+modelF3<-AddForce(modelF3,"BlockForce")
+modelF3<-SetYinitMode(modelF3,mode = "Intercept_0")
+modelF3<-ReplicateDrivingForce(modelF3,c(0,24),10)
+
+Pex1<-c(loggamma =log(gammaUnderD),omega=omega,AmpSin=1,PhiSin=pi,BlockForce=1)
+out<-SWDMrFit(modelF3,Pex1,method = "Solve");out$y1<-out$y1[-1];out$time<-out$time[-1];out$y2<-out$y2[-1]
+
+p3Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+p3Ex2<-p3Ex2+annotate("path",x=out$time,y=out$circ_sol,col=colorcode[["SCNforce"]],linetype="solid")
+p3Ex2<-p3Ex2+annotate("path",x=out$time,y=out$SW_response+out$trans_sol,col=colorcode[["SWforce"]],linetype="solid")
+p3Ex2
+
+
+Pex1<-c(loggamma =log(gammaOverD),omega=omega,AmpSin=1,PhiSin=pi,BlockForce=1)
+out<-SWDMrFit(modelF3,Pex1,method = "Solve");out$y1<-out$y1[-1];out$time<-out$time[-1];out$y2<-out$y2[-1]
+
+p4Ex2<-PlotOscillatorNoForce(out,colorcode,noy=F,noxlab=T,codcol="Modelfit")
+p4Ex2<-p4Ex2+annotate("path",x=out$time,y=out$circ_sol,col=colorcode[["SCNforce"]],linetype="solid")
+p4Ex2<-p4Ex2+annotate("path",x=out$time,y=out$SW_response+out$trans_sol,col=colorcode[["SWforce"]],linetype="solid")
+p4Ex2
+
+p3Ex2/p4Ex2
+```
+
+
+
+
+```{r,eval=T}
+p21Ex2<-p21Ex2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p214Ex2<-p214Ex2+theme(axis.title = element_blank())
+p21WEx2<-p21WEx2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p214WEx2<-p214WEx2+theme(axis.title = element_blank())
+#ggF2Ex2<-ggF2Ex2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+#ggFEx2<-ggFEx2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p3Ex2<-p3Ex2+theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.ticks.x = element_blank())
+p4Ex2<-p4Ex2+theme(axis.title = element_blank())
+
+
+p1Ex2<-p1Ex2+ylab(bquote(atop(paste("",italic("Gene X")),paste("[",zeta," < 1]"))))
+p12Ex2<-p12Ex2+ylab(bquote(atop(paste("",italic("Gene Y")),paste("[",zeta," > 1]"))))
+
+layout<-'
+#AB#
+CEGI
+DFHJ
+'
+
+#ggFEx2<-ggFEx2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+#ggF2Ex2<-ggF2Ex2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p21Ex2<-p21Ex2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p214Ex2<-p214Ex2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p21WEx2<-p21WEx2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p214WEx2<-p214WEx2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p3Ex2<-p3Ex2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+p4Ex2<-p4Ex2+geom_vline(xintercept = c(0,24,48,72,96),linetype="22",color=rgb(0,0,0,.5))
+
+#ggF2Ex2<-ggF2Ex2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p21WEx2<-p21WEx2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p214WEx2<-p214WEx2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p3Ex2<-p3Ex2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+p4Ex2<-p4Ex2+annotate("rect",xmin=24, xmax=30,ymin=-Inf,ymax=Inf,fill=rgb(1,0,0,.25))
+
+p12Ex2<-p12Ex2+annotate("text",x= 72, y= 2.5,label=substitute(paste(gamma," = 1.5")),size=2)
+p12Ex2<-p12Ex2+annotate("text",x= 72, y= 2,label=substitute(paste(omega[0]," = 0.13")),size=2)
+p12Ex2<-p12Ex2+annotate("text",x=72,y=0.5,label=substitute(paste(tau," = 80.1")),col="red",size=2)
+
+p1Ex2<-p1Ex2+annotate("text",x= 72, y= 2.5,label=substitute(paste(gamma," = 0.05")),size=2)
+p1Ex2<-p1Ex2+annotate("text",x= 72, y= 1.5,label=substitute(paste(omega[0]," = 0.13")),size=2)
+p1Ex2<-p1Ex2+annotate("text",x=72,y=-2,label=substitute(paste(tau," = 40.0")),col="red",size=2)
+
+
+#p3Ex2<-p3Ex2 + geom_hline(yintercept = c(-1/omega^2,1/omega^2),color="red",linetype="22")
+#p4<-p4 + geom_hline(yintercept = c(-1/omega^2,1/omega^2),color="red",linetype="22")
+
+# pF<-wrap_plots(A = ggFEx2, B=ggF2Ex2,C=p1Ex2,D=p12Ex2,E=p21Ex2,"F"=p214Ex2,G=p21WEx2,H=p214WEx2,I=p3Ex2,J=p4Ex2, design = layout,heights = c(0.5,1,1),widths = c(0.5,0.5,0.5,1))
+# pF
+#ggsave(paste(FIGUREDIR,"ExampleModel.pdf",sep=""), width = 185, height = 75, units = "mm",plot = pF)
+```
+
+# Final plot
+
+```{r}
+layout<-'
+#AB#
+CEGI
+KLMN
+####
+DFHJ
+OPQR
+'
+
+pF<-wrap_plots(A = ggF, B=ggF2,
+               C=RemoveXaxis(p1),E = p21,G = p21W,I=p3,
+               K=RemoveXaxis(p1Ex2),L=p21Ex2,M=p21WEx2,N=p3Ex2,
+               D=RemoveXaxis(p12),"F"=p214,H=RemoveXaxis(p214W),J=RemoveXaxis(p4),
+               O=p12Ex2,P=p214Ex2,Q=p214WEx2,R=p4Ex2,
+               design = layout,heights = c(0.5,1,1,.2,1,1),widths = c(0.5,0.5,0.5,1))
+pF
+ggsave(paste(FIGUREDIR,"ExampleModel.pdf",sep=""), width = 185, height = 100, units = "mm",plot = pF)
+```
+
